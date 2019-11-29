@@ -31,16 +31,11 @@ def main(args):
     assert (args.train or args.test or args.manip), 'Cannot have train, test, and manip all set to 0, Nothing to do.'
 
     # Load the training, validation, and testing data
-    try:
-        train_list, val_list, test_list = load_data(args.data_root_dir, args.split_num)
-    except:
-        # Create the training and test splits if not found
-        split_data(args.data_root_dir, num_splits=4)
-        train_list, val_list, test_list = load_data(args.data_root_dir, args.split_num)
+    train_list, val_list = load_data(args.data_root_dir)
 
     # Get image properties from first image. Assume they are all the same.
     img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'imgs', train_list[0][0]))).shape
-    net_input_shape = (img_shape[1], img_shape[2], args.slices)
+    net_input_shape = (int(img_shape[0]/2), int(img_shape[1]/2), 1)
 
     # Create the model for training/testing/manipulation
     model_list = create_model(args=args, input_shape=net_input_shape)
@@ -82,16 +77,6 @@ def main(args):
         # Run training
         train(args, train_list, val_list, model_list[0], net_input_shape)
 
-    if args.test:
-        from test import test
-        # Run testing
-        test(args, test_list, model_list, net_input_shape)
-
-    if args.manip:
-        from manip import manip
-        # Run manipulation of segcaps
-        manip(args, test_list, model_list, net_input_shape)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train on Medical Data')
@@ -115,9 +100,10 @@ if __name__ == '__main__':
     parser.add_argument('--aug_data', type=int, default=1, choices=[0, 1],
                         help='Whether or not to use data augmentation during training.')
     parser.add_argument('--loss', type=str.lower, default='w_bce',
-                        choices=['bce', 'w_bce', 'dice', 'mar', 'w_mar', 'cce'],
+                        choices=['bce', 'w_bce', 'dice', 'mar', 'w_mar', 'cce', 'scce'],
                         help='Which loss to use. "bce" and "w_bce": unweighted and weighted binary cross entropy'
-                             '"dice": soft dice coefficient, "mar" and "w_mar": unweighted and weighted margin loss.')
+                             '"dice": soft dice coefficient, "mar" and "w_mar": unweighted and weighted margin loss, '
+                             '"cce": categorical cross entropy, "scce": sparse categorical cross entropy.')
     parser.add_argument('--batch_size', type=int, default=1,
                         help='Batch size for training/testing.')
     parser.add_argument('--initial_lr', type=float, default=0.0001,
@@ -163,8 +149,8 @@ if __name__ == '__main__':
         environ["CUDA_VISIBLE_DEVICES"] = ""
     elif arguments.which_gpus == '-1':
         assert (
-                    arguments.gpus != -1), 'Use all GPUs option selected under --which_gpus, with this option the user MUST ' \
-                                           'specify the number of GPUs available with the --gpus option.'
+                arguments.gpus != -1), 'Use all GPUs option selected under --which_gpus, with this option the user MUST ' \
+                                       'specify the number of GPUs available with the --gpus option.'
     else:
         arguments.gpus = len(arguments.which_gpus.split(','))
         environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

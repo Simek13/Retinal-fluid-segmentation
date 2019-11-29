@@ -1,81 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="spavlic@161.53.64.237:5555">
+  <component name="PublishConfigData" autoUpload="Always" serverName="spavlic@161.53.64.237:5555" exclude=".svn;.cvs;.idea;.DS_Store;.git;.hg;*.hprof;*.pyc;imgs;">
     <serverData>
-      <paths name="Anaconda interpreter">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
       <paths name="spavlic@161.53.64.237:5555">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.237:5555 (1)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.237:5555 (2)">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/tmp/pycharm_project_893" local="$PROJECT_DIR$" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555 (1)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555 (10)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555 (11)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555 (2)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555 (8)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="spavlic@161.53.64.96:5555 (9)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/tmp/pycharm_project_193" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

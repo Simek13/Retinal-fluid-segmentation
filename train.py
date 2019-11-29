@@ -28,6 +28,8 @@ import tensorflow as tf
 from custom_losses import dice_hard, weighted_binary_crossentropy_loss, dice_loss, margin_loss
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
+PIXEL_CLASS_WEIGHTS = {1: 1.0, 2: 245.95011026887065, 3: 281.2251255452305, 4: 245.31964388353404}
+PRESENCE_CLASS_WEIGHTS = {1: 1.0, 2: 3.2855614973262033, 3: 4.388571428571429, 4: 4.938906752411576}
 
 def get_loss(root, split, net, recon_wei, choice):
     if choice == 'w_bce':
@@ -44,6 +46,8 @@ def get_loss(root, split, net, recon_wei, choice):
         loss = margin_loss(margin=0.4, downweight=0.5, pos_weight=1.0)
     elif choice == 'cce':
         loss = 'categorical_crossentropy'
+    elif choice == 'scce':
+        loss = 'sparse_categorical_crossentropy'
     else:
         raise Exception("Unknow loss_type")
 
@@ -54,7 +58,7 @@ def get_loss(root, split, net, recon_wei, choice):
 
 def get_callbacks(arguments):
     if arguments.net.find('caps') != -1:
-        monitor_name = 'val_out_seg_dice_hard'
+        monitor_name = 'val_out_seg_categorical_accuracy'
     else:
         monitor_name = 'val_dice_hard'
 
@@ -72,7 +76,8 @@ def compile_model(args, net_input_shape, uncomp_model):
     # Set optimizer loss and metrics
     opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
-        metrics = {'out_seg': dice_hard}
+        metrics = {'out_seg': 'categorical_accuracy'}
+        # metrics = {'out_seg': dice_hard}
     else:
         metrics = [dice_hard]
 
@@ -98,17 +103,17 @@ def plot_training(training_history, arguments):
     f.suptitle(arguments.net, fontsize=18)
 
     if arguments.net.find('caps') != -1:
-        ax1.plot(training_history.history['out_seg_dice_hard'])
-        ax1.plot(training_history.history['val_out_seg_dice_hard'])
+        ax1.plot(training_history.history['out_seg_categorical_accuracy'])
+        ax1.plot(training_history.history['val_out_seg_categorical_accuracy'])
     else:
         ax1.plot(training_history.history['dice_hard'])
         ax1.plot(training_history.history['val_dice_hard'])
-    ax1.set_title('Dice Coefficient')
-    ax1.set_ylabel('Dice', fontsize=12)
+    ax1.set_title('Categorical Accuracy')
+    ax1.set_ylabel('Accuracy', fontsize=12)
     ax1.legend(['Train', 'Val'], loc='upper left')
     ax1.set_yticks(np.arange(0, 1.05, 0.05))
     if arguments.net.find('caps') != -1:
-        ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_dice_hard'])))
+        ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
     else:
         ax1.set_xticks(np.arange(0, len(training_history.history['dice_hard'])))
     ax1.grid(True)
@@ -143,14 +148,15 @@ def train(args, train_list, val_list, u_model, net_input_shape):
                                batchSize=args.batch_size, numSlices=args.slices, subSampAmt=args.subsamp,
                                stride=args.stride, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
-        steps_per_epoch=10000,
-        validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
+        steps_per_epoch=2000,
+        validation_data=generate_train_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batchSize=args.batch_size,  numSlices=args.slices, subSampAmt=0,
                                              stride=20, shuff=args.shuffle_data),
         validation_steps=500, # Set validation stride larger to see more of the data.
-        epochs=200,
+        epochs=50,
         callbacks=callbacks,
-        verbose=1)
+        verbose=1,
+        class_weight=PRESENCE_CLASS_WEIGHTS)
 
     # Plot the training data collected
     plot_training(history, args)

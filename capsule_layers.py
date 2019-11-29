@@ -10,8 +10,9 @@ This file contains the definitions of the various capsule layers and dynamic rou
 
 import keras.backend as K
 import tensorflow as tf
-from keras import initializers, layers
+from keras import initializers, layers, activations as actv
 from keras.utils.conv_utils import conv_output_length, deconv_length
+from keras.activations import softmax
 import numpy as np
 
 class Length(layers.Layer):
@@ -24,10 +25,8 @@ class Length(layers.Layer):
         self.seg = seg
 
     def call(self, inputs, **kwargs):
-        if inputs.get_shape().ndims == 5:
-            assert inputs.get_shape()[-2].value == 1, 'Error: Must have num_capsules = 1 going into Length'
-            inputs = K.squeeze(inputs, axis=-2)
-        return K.expand_dims(tf.norm(inputs, axis=-1), axis=-1)
+        return softmax(tf.norm(inputs, axis=-1), axis=-1)
+
 
     def compute_output_shape(self, input_shape):
         if len(input_shape) == 5:
@@ -137,12 +136,12 @@ class ConvCapsuleLayer(layers.Layer):
 
         votes = K.reshape(conv, [input_shape[1], input_shape[0], votes_shape[1], votes_shape[2],
                                  self.num_capsule, self.num_atoms])
-        votes.set_shape((None, self.input_num_capsule, conv_height.value, conv_width.value,
+        votes.set_shape((None, self.input_num_capsule, conv_height, conv_width,
                          self.num_capsule, self.num_atoms))
 
         logit_shape = K.stack([
             input_shape[1], input_shape[0], votes_shape[1], votes_shape[2], self.num_capsule])
-        biases_replicated = K.tile(self.b, [conv_height.value, conv_width.value, 1, 1])
+        biases_replicated = K.tile(self.b, [conv_height, conv_width, 1, 1])
 
         activations = update_routing(
             votes=votes,
@@ -247,8 +246,8 @@ class DeconvCapsuleLayer(layers.Layer):
             batch_size = input_shape[1] * input_shape[0]
 
             # Infer the dynamic output shape:
-            out_height = deconv_length(self.input_height, self.scaling, self.kernel_size, self.padding)
-            out_width = deconv_length(self.input_width, self.scaling, self.kernel_size, self.padding)
+            out_height = deconv_length(self.input_height, self.scaling, self.kernel_size, self.padding, output_padding=None)
+            out_width = deconv_length(self.input_width, self.scaling, self.kernel_size, self.padding, output_padding=None)
             output_shape = (batch_size, out_height, out_width, self.num_capsule * self.num_atoms)
 
             outputs = K.conv2d_transpose(input_tensor_reshaped, self.W, output_shape, (self.scaling, self.scaling),
@@ -259,7 +258,7 @@ class DeconvCapsuleLayer(layers.Layer):
 
         votes = K.reshape(outputs, [input_shape[1], input_shape[0], votes_shape[1], votes_shape[2],
                                  self.num_capsule, self.num_atoms])
-        votes.set_shape((None, self.input_num_capsule, conv_height.value, conv_width.value,
+        votes.set_shape((None, self.input_num_capsule, conv_height, conv_width,
                          self.num_capsule, self.num_atoms))
 
         logit_shape = K.stack([
@@ -280,8 +279,8 @@ class DeconvCapsuleLayer(layers.Layer):
     def compute_output_shape(self, input_shape):
         output_shape = list(input_shape)
 
-        output_shape[1] = deconv_length(output_shape[1], self.scaling, self.kernel_size, self.padding)
-        output_shape[2] = deconv_length(output_shape[2], self.scaling, self.kernel_size, self.padding)
+        output_shape[1] = deconv_length(output_shape[1], self.scaling, self.kernel_size, self.padding, output_padding=None)
+        output_shape[2] = deconv_length(output_shape[2], self.scaling, self.kernel_size, self.padding, output_padding=None)
         output_shape[3] = self.num_capsule
         output_shape[4] = self.num_atoms
 
@@ -319,7 +318,7 @@ def update_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim,
     def _body(i, logits, activations):
         """Routing while loop."""
         # route: [batch, input_dim, output_dim, ...]
-        route = tf.nn.softmax(logits, dim=-1)
+        route = actv.softmax(logits, axis=-1)
         preactivate_unrolled = route * votes_trans
         preact_trans = tf.transpose(preactivate_unrolled, r_t_shape)
         preactivate = tf.reduce_sum(preact_trans, axis=1) + biases
@@ -348,6 +347,6 @@ def update_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim,
 
 
 def _squash(input_tensor):
-    norm = tf.norm(input_tensor, axis=-1, keep_dims=True)
+    norm = tf.norm(input_tensor, axis=-1, keepdims=True)
     norm_squared = norm * norm
     return (input_tensor / norm) * (norm_squared / (1 + norm_squared))
