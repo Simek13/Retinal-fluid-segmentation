@@ -11,11 +11,13 @@ This file is used for testing models. Please see the README for details about te
 from __future__ import print_function
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 plt.ioff()
 
-from os.path import join
+from os.path import join, splitext
 from os import makedirs
 import csv
 import SimpleITK as sitk
@@ -26,8 +28,10 @@ from skimage import measure, filters
 from metrics import dc, jc, assd
 
 from keras import backend as K
+
 K.set_image_data_format('channels_last')
 from keras.utils import print_summary
+from PIL import Image
 
 from load_3D_data import generate_test_batches
 
@@ -111,7 +115,7 @@ def test(args, test_list, model_list, net_input_shape):
     # Testing the network
     print('Testing... This will take some time...')
 
-    with open(join(output_dir, args.save_prefix + outfile + 'scores.csv'), 'wb') as csvfile:
+    with open(join(output_dir, args.save_prefix + outfile + 'scores.csv'), 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
         row = ['Scan Name']
@@ -127,7 +131,6 @@ def test(args, test_list, model_list, net_input_shape):
         for i, img in enumerate(tqdm(test_list)):
             sitk_img = sitk.ReadImage(join(args.data_root_dir, 'imgs', img[0]))
             img_data = sitk.GetArrayFromImage(sitk_img)
-            num_slices = img_data.shape[0]
 
             output_array = eval_model.predict_generator(generate_test_batches(args.data_root_dir, [img],
                                                                               net_input_shape,
@@ -135,55 +138,69 @@ def test(args, test_list, model_list, net_input_shape):
                                                                               numSlices=args.slices,
                                                                               subSampAmt=0,
                                                                               stride=1),
-                                                        steps=num_slices, max_queue_size=1, workers=1,
+                                                        steps=1, max_queue_size=1, workers=1,
                                                         use_multiprocessing=False, verbose=1)
 
             if args.net.find('caps') != -1:
-                output = output_array[0][:,:,:,0]
-                #recon = output_array[1][:,:,:,0]
+                output = output_array
+                # recon = output_array[1]
             else:
-                output = output_array[:,:,:,0]
+                output = output_array[:, :, :, 0]
 
-            output_img = sitk.GetImageFromArray(output)
+            # output_img = sitk.GetImageFromArray(recon)
+
             print('Segmenting Output')
-            output_bin = threshold_mask(output, args.thresh_level)
+            output_bin = np.argmax(output, axis=-1)
+            output_bin = np.squeeze(output_bin, axis=0)
+            output_bin[output_bin == 0] = 0
+            output_bin[output_bin == 1] = 85
+            output_bin[output_bin == 2] = 170
+            output_bin[output_bin == 3] = 255
+            output_bin = output_bin.astype('uint8')
+            # output_bin = threshold_mask(output, args.thresh_level)
             output_mask = sitk.GetImageFromArray(output_bin)
 
-            output_img.CopyInformation(sitk_img)
-            output_mask.CopyInformation(sitk_img)
+            # output_img.CopyInformation(sitk_img)
+            # output_mask.CopyInformation(sitk_img)
 
             print('Saving Output')
-            sitk.WriteImage(output_img, join(raw_out_dir, img[0][:-4] + '_raw_output' + img[0][-4:]))
+            # sitk.WriteImage(output_img, join(raw_out_dir, img[0][:-4] + '_raw_output' + img[0][-4:]))
             sitk.WriteImage(output_mask, join(fin_out_dir, img[0][:-4] + '_final_output' + img[0][-4:]))
 
             # Load gt mask
-            sitk_mask = sitk.ReadImage(join(args.data_root_dir, 'masks', img[0]))
-            gt_data = sitk.GetArrayFromImage(sitk_mask)
+            # sitk_mask = sitk.ReadImage(join(args.data_root_dir, 'masks', img[1]))
+            # gt_data = sitk.GetArrayFromImage(sitk_mask)
+            mask_data_orig = np.array(Image.open(join(args.data_root_dir, 'masks', img[1])),
+                                      dtype=np.uint8)
+            mask_data = np.array(
+                Image.open(join(args.data_root_dir, 'masks', img[1])).resize((net_input_shape[1], net_input_shape[0])),
+                dtype=np.uint8)
 
             # Plot Qual Figure
             print('Creating Qualitative Figure for Quick Reference')
             f, ax = plt.subplots(1, 3, figsize=(15, 5))
 
-            ax[0].imshow(img_data[img_data.shape[0] // 3, :, :], alpha=1, cmap='gray')
-            ax[0].imshow(output_bin[img_data.shape[0] // 3, :, :], alpha=0.5, cmap='Blues')
-            ax[0].imshow(gt_data[img_data.shape[0] // 3, :, :], alpha=0.2, cmap='Reds')
-            ax[0].set_title('Slice {}/{}'.format(img_data.shape[0] // 3, img_data.shape[0]))
-            ax[0].axis('off')
-
-            ax[1].imshow(img_data[img_data.shape[0] // 2, :, :], alpha=1, cmap='gray')
-            ax[1].imshow(output_bin[img_data.shape[0] // 2, :, :], alpha=0.5, cmap='Blues')
-            ax[1].imshow(gt_data[img_data.shape[0] // 2, :, :], alpha=0.2, cmap='Reds')
-            ax[1].set_title('Slice {}/{}'.format(img_data.shape[0] // 2, img_data.shape[0]))
-            ax[1].axis('off')
-
-            ax[2].imshow(img_data[img_data.shape[0] // 2 + img_data.shape[0] // 4, :, :], alpha=1, cmap='gray')
-            ax[2].imshow(output_bin[img_data.shape[0] // 2 + img_data.shape[0] // 4, :, :], alpha=0.5,
-                         cmap='Blues')
-            ax[2].imshow(gt_data[img_data.shape[0] // 2 + img_data.shape[0] // 4, :, :], alpha=0.2,
-                         cmap='Reds')
-            ax[2].set_title(
-                'Slice {}/{}'.format(img_data.shape[0] // 2 + img_data.shape[0] // 4, img_data.shape[0]))
-            ax[2].axis('off')
+            ax[0].imshow(img_data, alpha=1, cmap='gray')
+            ax[0].imshow(output_bin, alpha=0.5, cmap='Blues')
+            ax[0].imshow(mask_data, alpha=0.35, cmap='Oranges')
+            ax[0].imshow(mask_data_orig, alpha=0.2, cmap='Reds')
+            # ax[0].set_title('Slice {}/{}'.format(img_data.shape[0] // 3, img_data.shape[0]))
+            # ax[0].axis('off')
+            #
+            # ax[1].imshow(img_data[img_data.shape[0] // 2, :, :], alpha=1, cmap='gray')
+            # ax[1].imshow(output_bin[img_data.shape[0] // 2, :, :], alpha=0.5, cmap='Blues')
+            # ax[1].imshow(gt_data[img_data.shape[0] // 2, :, :], alpha=0.2, cmap='Reds')
+            # ax[1].set_title('Slice {}/{}'.format(img_data.shape[0] // 2, img_data.shape[0]))
+            # ax[1].axis('off')
+            #
+            # ax[2].imshow(img_data[img_data.shape[0] // 2 + img_data.shape[0] // 4, :, :], alpha=1, cmap='gray')
+            # ax[2].imshow(output_bin[img_data.shape[0] // 2 + img_data.shape[0] // 4, :, :], alpha=0.5,
+            #              cmap='Blues')
+            # ax[2].imshow(gt_data[img_data.shape[0] // 2 + img_data.shape[0] // 4, :, :], alpha=0.2,
+            #              cmap='Reds')
+            # ax[2].set_title(
+            #     'Slice {}/{}'.format(img_data.shape[0] // 2 + img_data.shape[0] // 4, img_data.shape[0]))
+            # ax[2].axis('off')
 
             fig = plt.gcf()
             fig.suptitle(img[0][:-4])
@@ -192,32 +209,32 @@ def test(args, test_list, model_list, net_input_shape):
                         format='png', bbox_inches='tight')
             plt.close('all')
 
-            row = [img[0][:-4]]
-            if args.compute_dice:
-                print('Computing Dice')
-                dice_arr[i] = dc(output_bin, gt_data)
-                print('\tDice: {}'.format(dice_arr[i]))
-                row.append(dice_arr[i])
-            if args.compute_jaccard:
-                print('Computing Jaccard')
-                jacc_arr[i] = jc(output_bin, gt_data)
-                print('\tJaccard: {}'.format(jacc_arr[i]))
-                row.append(jacc_arr[i])
-            if args.compute_assd:
-                print('Computing ASSD')
-                assd_arr[i] = assd(output_bin, gt_data, voxelspacing=sitk_img.GetSpacing(), connectivity=1)
-                print('\tASSD: {}'.format(assd_arr[i]))
-                row.append(assd_arr[i])
-
-            writer.writerow(row)
-
-        row = ['Average Scores']
-        if args.compute_dice:
-            row.append(np.mean(dice_arr))
-        if args.compute_jaccard:
-            row.append(np.mean(jacc_arr))
-        if args.compute_assd:
-            row.append(np.mean(assd_arr))
-        writer.writerow(row)
+        #     row = [img[0][:-4]]
+        #     if args.compute_dice:
+        #         print('Computing Dice')
+        #         dice_arr[i] = dc(output_bin, mask_data)
+        #         print('\tDice: {}'.format(dice_arr[i]))
+        #         row.append(dice_arr[i])
+        #     if args.compute_jaccard:
+        #         print('Computing Jaccard')
+        #         jacc_arr[i] = jc(output_bin, mask_data)
+        #         print('\tJaccard: {}'.format(jacc_arr[i]))
+        #         row.append(jacc_arr[i])
+        #     if args.compute_assd:
+        #         print('Computing ASSD')
+        #         assd_arr[i] = assd(output_bin, mask_data, voxelspacing=sitk_img.GetSpacing(), connectivity=1)
+        #         print('\tASSD: {}'.format(assd_arr[i]))
+        #         row.append(assd_arr[i])
+        #
+        #     writer.writerow(row)
+        #
+        # row = ['Average Scores']
+        # if args.compute_dice:
+        #     row.append(np.mean(dice_arr))
+        # if args.compute_jaccard:
+        #     row.append(np.mean(jacc_arr))
+        # if args.compute_assd:
+        #     row.append(np.mean(assd_arr))
+        # writer.writerow(row)
 
     print('Done.')

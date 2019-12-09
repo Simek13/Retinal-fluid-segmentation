@@ -11,7 +11,6 @@ This file contains the network definitions for the various capsule network archi
 from keras import layers, models
 from keras import backend as K
 
-
 K.set_image_data_format('channels_last')
 
 from capsule_layers import ConvCapsuleLayer, DeconvCapsuleLayer, Mask, Length
@@ -91,10 +90,11 @@ def CapsNetR3(input_shape, n_class=4):
     out_seg = Length(num_classes=n_class, seg=True, name='out_seg')(seg_caps)
 
     # Decoder network.
-    _, H, W, C, A = seg_caps.get_shape()
-    y = layers.Input(shape=input_shape[:-1] + (4,))
-    masked_by_y = Mask()([seg_caps, y])  # The true label is used to mask the output of capsule layer. For training
-    masked = Mask()(seg_caps)  # Mask using the capsule with maximal length. For prediction
+    # _, H, W, C, A = seg_caps.get_shape()
+    # y = layers.Input(shape=input_shape[:-1] + (4,))
+    # masked_by_y = Mask()([seg_caps, y])  # The true label is used to mask the output of capsule layer. For training
+    # masked = Mask()(seg_caps)  # Mask using the capsule with maximal length. For prediction
+
 
     def shared_decoder(mask_layer):
         # recon_remove_dim = layers.Reshape((H, W, A))(mask_layer)
@@ -105,7 +105,7 @@ def CapsNetR3(input_shape, n_class=4):
         mask3 = layers.Lambda(lambda x: x[:, :, :, 3, :])(mask_layer)
 
         recon_01 = layers.Conv2D(filters=64, kernel_size=1, padding='same', kernel_initializer='he_normal',
-                                activation='relu', name='recon_01')(mask0)
+                                 activation='relu', name='recon_01')(mask0)
         recon_11 = layers.Conv2D(filters=64, kernel_size=1, padding='same', kernel_initializer='he_normal',
                                  activation='relu', name='recon_11')(mask1)
         recon_21 = layers.Conv2D(filters=64, kernel_size=1, padding='same', kernel_initializer='he_normal',
@@ -114,7 +114,7 @@ def CapsNetR3(input_shape, n_class=4):
                                  activation='relu', name='recon_31')(mask3)
 
         recon_02 = layers.Conv2D(filters=128, kernel_size=1, padding='same', kernel_initializer='he_normal',
-                                activation='relu', name='recon_02')(recon_01)
+                                 activation='relu', name='recon_02')(recon_01)
         recon_12 = layers.Conv2D(filters=128, kernel_size=1, padding='same', kernel_initializer='he_normal',
                                  activation='relu', name='recon_12')(recon_11)
         recon_22 = layers.Conv2D(filters=128, kernel_size=1, padding='same', kernel_initializer='he_normal',
@@ -123,7 +123,7 @@ def CapsNetR3(input_shape, n_class=4):
                                  activation='relu', name='recon_32')(recon_31)
 
         out_recon0 = layers.Conv2D(filters=1, kernel_size=1, padding='same', kernel_initializer='he_normal',
-                                  activation='sigmoid', name='out_recon0')(recon_02)
+                                   activation='sigmoid', name='out_recon0')(recon_02)
         out_recon1 = layers.Conv2D(filters=1, kernel_size=1, padding='same', kernel_initializer='he_normal',
                                    activation='sigmoid', name='out_recon1')(recon_12)
         out_recon2 = layers.Conv2D(filters=1, kernel_size=1, padding='same', kernel_initializer='he_normal',
@@ -132,15 +132,14 @@ def CapsNetR3(input_shape, n_class=4):
                                    activation='sigmoid', name='out_recon3')(recon_32)
 
         out_recon = layers.Concatenate(axis=-1, name='out_recon')([out_recon0, out_recon1, out_recon2, out_recon3])
-        # out_recon = layers.Lambda(lambda o: K.squeeze(o, axis=0))(out_recon)
 
         return out_recon
 
     # Models for training and evaluation (prediction)
-    masked_by_y = shared_decoder(masked_by_y)
-    train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y])
-    masked = shared_decoder(masked)
-    eval_model = models.Model(inputs=x, outputs=[out_seg, masked])
+    # train_model = models.Model(inputs=[x, y], outputs=[out_seg, shared_decoder(masked_by_y)])
+    train_model = models.Model(inputs=x, outputs=out_seg)
+    # eval_model = models.Model(inputs=x, outputs=[out_seg, shared_decoder(masked)])
+    eval_model = models.Model(inputs=x, outputs=out_seg)
 
     # manipulate model
     # noise = layers.Input(shape=((H, W, C, A)))

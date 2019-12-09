@@ -21,10 +21,10 @@ def calculate_class_weights_presence(root_path):
             class_counter[3] += 1
 
     class_weights = {
-        0: class_counter[0]/class_counter[0],
-        1: class_counter[0]/class_counter[1],
-        2: class_counter[0] / class_counter[2],
-        3: class_counter[0] / class_counter[3]
+        1: class_counter[0]/class_counter[0],
+        2: class_counter[0]/class_counter[1],
+        3: class_counter[0] / class_counter[2],
+        4: class_counter[0] / class_counter[3]
     }
     return  class_weights
 
@@ -48,9 +48,9 @@ def calculate_class_weights_pixel_wise(root_path):
                 class_counter[3] += 1
 
     class_weights = {
-        0: class_counter[0] / class_counter[0],
-        1: class_counter[0] / class_counter[1],
-        2: class_counter[0] / class_counter[2],
-        3: class_counter[0] / class_counter[3]
+        1: class_counter[0] / class_counter[0],
+        2: class_counter[0] / class_counter[1],
+        3: class_counter[0] / class_counter[2],
+        4: class_counter[0] / class_counter[3]
     }
     return class_weights

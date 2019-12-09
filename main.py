@@ -11,18 +11,21 @@ Please see the README for detailed instructions for this project.
 
 from __future__ import print_function
 
+from comet_ml import Experiment
+
 from os.path import join
 from os import makedirs
 from os import environ
 import argparse
 import SimpleITK as sitk
 from time import gmtime, strftime
+from sklearn.model_selection import KFold, train_test_split
 
 time = strftime("%Y-%m-%d-%H:%M:%S", gmtime())
 
 from keras.utils import print_summary
 
-from load_3D_data import load_data, split_data
+from load_3D_data import load_data
 from model_helper import create_model
 
 
@@ -30,12 +33,16 @@ def main(args):
     # Ensure training, testing, and manip are not all turned off
     assert (args.train or args.test or args.manip), 'Cannot have train, test, and manip all set to 0, Nothing to do.'
 
+    experiment = Experiment(project_name="general", workspace="simek13")
+
     # Load the training, validation, and testing data
-    train_list, val_list = load_data(args.data_root_dir)
+    data = load_data(args.data_root_dir)
+    train_list, val_list = train_test_split(data, test_size=0.1)
 
     # Get image properties from first image. Assume they are all the same.
-    img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'imgs', train_list[0][0]))).shape
-    net_input_shape = (int(img_shape[0]/2), int(img_shape[1]/2), 1)
+    img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'imgs', data[0][0]))).shape
+    net_input_shape = (int(img_shape[0] / 2), int(img_shape[1] / 2), 1)
+    # net_input_shape = (img_shape[0], img_shape[1], 1)
 
     # Create the model for training/testing/manipulation
     model_list = create_model(args=args, input_shape=net_input_shape)
@@ -76,6 +83,24 @@ def main(args):
         from train import train
         # Run training
         train(args, train_list, val_list, model_list[0], net_input_shape)
+        # if args.kfold:
+        # kfold = KFold(args.splits, True)
+        # for train_list, val_list in kfold.split(data):
+        # weights = model_list[0].get_weights()
+        # model_list[0].set_weights(weights)
+        # else:
+        #     train_list, val_list = train_test_split(data, test_size=0.1)
+        #     train(args, train_list, val_list, model_list[0], net_input_shape)
+
+    if args.test:
+        from test import test
+        # Run testing
+        test(args, val_list, model_list, net_input_shape)
+    #
+    # if args.manip:
+    #     from manip import manip
+    #     # Run manipulation of segcaps
+    #     manip(args, test_list, model_list, net_input_shape)
 
 
 if __name__ == '__main__':
@@ -140,6 +165,10 @@ if __name__ == '__main__':
                         help='Number of GPUs you have available for training. '
                              'If entering specific GPU ids under the --which_gpus arg or if using CPU, '
                              'then this number will be inferred, else this argument must be included.')
+    parser.add_argument('--kfold', type=int, default=0,
+                        help='Whether to use cross validation. 0 - no, 1 - yes.')
+    parser.add_argument('--ksplits', type=int, default=10,
+                        help='Number of cross validation splits.')
 
     arguments = parser.parse_args()
 

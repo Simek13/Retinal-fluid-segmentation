@@ -21,7 +21,6 @@ from sklearn.model_selection import KFold
 import numpy as np
 from numpy.random import rand, shuffle
 import SimpleITK as sitk
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 import matplotlib
@@ -48,12 +47,12 @@ def load_data(root):
 
     for im in image_data:
         name = splitext(im)[0]
-        data.append((name + '.jpg', name.replace('Cirrus', 'CIRRUS') + '.png'))
+        # data.append((name + '.jpg', name.replace('Cirrus', 'CIRRUS') + '.png'))
+        data.append((name + '.jpg', name + '.png'))
 
-    # images_train, images_test, masks_train, masks_test = train_test_split(image_data, mask_data, test_size=0.1)
-    train_data, test_data = train_test_split(data, test_size=0.1)
+    # train_data, test_data = train_test_split(data, test_size=0.1)
 
-    return train_data, test_data
+    return data
 
 
 def compute_class_weights(root, train_data_list):
@@ -127,8 +126,8 @@ def split_data(root_path, num_splits=4):
         n += 1
 
 
-def convert_data_to_numpy(root_path, img_name, mask_name, no_masks=False, overwrite=False):
-    fname = img_name[:-4]
+def convert_data_to_numpy(root_path, img_name, mask_name, net_input_shape, no_masks=False, overwrite=False):
+    fname = splitext(img_name)[0]
     numpy_path = join(root_path, 'np_files')
     img_path = join(root_path, 'imgs')
     mask_path = join(root_path, 'masks')
@@ -142,9 +141,6 @@ def convert_data_to_numpy(root_path, img_name, mask_name, no_masks=False, overwr
     except:
         pass
 
-    ct_min = -1024
-    ct_max = 3072
-
     if not overwrite:
         try:
             with np.load(join(numpy_path, fname + '.npz')) as data:
@@ -153,24 +149,27 @@ def convert_data_to_numpy(root_path, img_name, mask_name, no_masks=False, overwr
             pass
 
     try:
-        itk_img = sitk.ReadImage(join(img_path, img_name))
-        img = sitk.GetArrayFromImage(itk_img)
-        img = np.rollaxis(img, 0, 3)
-        img = img.astype(np.float32)
-        img[img > ct_max] = ct_max
-        img[img < ct_min] = ct_min
-        img += -ct_min
-        img /= (ct_max + -ct_min)
+        # itk_img = sitk.ReadImage(join(img_path, img_name))
+        # img = sitk.GetArrayFromImage(itk_img)
+        # img = img.astype(np.float32)
+
+        # img = np.array(Image.open(join(img_path, img_name)).convert('L').resize((net_input_shape[1],
+        #                                                                              net_input_shape[0])),
+        #          dtype=np.uint8)
+        img = np.array(Image.open(join(img_path, img_name)).resize((net_input_shape[1], net_input_shape[0])),
+                       dtype=np.uint8)
 
         if not no_masks:
-            itk_mask = sitk.ReadImage(join(mask_path, mask_name))
-            mask = sitk.GetArrayFromImage(itk_mask)
-            # mask = np.rollaxis(mask, 0, 3)
-            # mask[mask > 250] = 1  # In case using 255 instead of 1
-            # mask[mask > 4.5] = 0  # Trachea = 5
-            # mask[mask >= 1] = 1  # Left lung = 3, Right lung = 4
-            # mask[mask != 1] = 0  # Non-Lung/Background
-            mask = mask.astype(np.uint8)
+            # itk_mask = sitk.ReadImage(join(mask_path, mask_name))
+            # mask = sitk.GetArrayFromImage(itk_mask)
+            # mask = mask.astype(np.uint8)
+
+            mask = np.array(Image.open(join(mask_path, mask_name)).resize((net_input_shape[1],
+                                                                             net_input_shape[0])),
+                     dtype=np.uint8)
+            # mask = np.array(Image.open(join(mask_path, mask_name)),
+            #                 dtype=np.uint8)
+
 
         # try:
         #     f, ax = plt.subplots(1, 3, figsize=(15, 5))
@@ -258,11 +257,11 @@ def augmentImages(batch_of_images, batch_of_masks):
             img_and_mask = random_zoom(img_and_mask, zoom_range=(0.75, 0.75), row_axis=0, col_axis=1, channel_axis=2,
                                        fill_mode='constant', cval=0.)
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = flip_axis(img_and_mask, axis=1)
-
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = flip_axis(img_and_mask, axis=0)
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = flip_axis(img_and_mask, axis=1)
+        #
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = flip_axis(img_and_mask, axis=0)
 
         if np.random.randint(0, 10) == 7:
             salt_pepper_noise(img_and_mask, salt=0.2, amount=0.04)
@@ -276,8 +275,8 @@ def augmentImages(batch_of_images, batch_of_masks):
             batch_of_masks[i, ...] = img_and_mask[..., img_and_mask.shape[2] // 2:, :]
 
         # Ensure the masks did not get any non-binary values.
-        batch_of_masks[batch_of_masks > 0.5] = 1
-        batch_of_masks[batch_of_masks <= 0.5] = 0
+        # batch_of_masks[batch_of_masks > 0.5] = 1
+        # batch_of_masks[batch_of_masks <= 0.5] = 0
 
     return (batch_of_images, batch_of_masks)
 
@@ -316,58 +315,52 @@ def threadsafe_generator(f):
 def generate_train_batches(root_path, train_list, net_input_shape, net, batchSize=1, numSlices=1, subSampAmt=-1,
                            stride=1, downSampAmt=1, shuff=1, aug_data=1):
     # Create placeholders for training
-    img_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.uint8)
-    mask_batch = np.zeros((np.concatenate(((batchSize,), (net_input_shape[0], net_input_shape[1], 4)))), dtype=np.uint8)
+    img_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.float32)
+    mask_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.uint8)
 
     while True:
         if shuff:
             shuffle(train_list)
         count = 0
         for i, scan in enumerate(train_list):
-            # try:
-            #     scan_name = scan[0]
-            #     mask_name = scan[1]
-            #     path_to_np = join(root_path, 'np_files', basename(scan_name)[:-3] + 'npz')
-            #     with np.load(path_to_np) as data:
-            #         train_img = data['img']
-            #         train_mask = data['mask']
-            # except:
-            #     print('\nPre-made numpy array not found for {}.\nCreating now...'.format(scan_name[:-4]))
-            #     train_img, train_mask = convert_data_to_numpy(root_path, scan_name, mask_name)
-            #     if np.array_equal(train_img, np.zeros(1)):
-            #         continue
-            #     else:
-            #         print('\nFinished making npz file.')
+            try:
+                scan_name = scan[0]
+                mask_name = scan[1]
+                path_to_np = join(root_path, 'np_files', splitext(scan_name)[0] + '.npz')
+                with np.load(path_to_np) as data:
+                    train_img = data['img']
+                    train_mask = data['mask']
+            except:
+                print('\nPre-made numpy array not found for {}.\nCreating now...'.format(splitext(scan_name)[0]))
+                train_img, train_mask = convert_data_to_numpy(root_path, scan_name, mask_name, net_input_shape)
+                if np.array_equal(train_img, np.zeros(1)):
+                    continue
+                else:
+                    print('\nFinished making npz file.')
 
-            scan_name = scan[0]
-            mask_name = scan[1]
-            train_img = np.array(Image.open(join(root_path, 'imgs', scan_name)).convert('L').resize((net_input_shape[1],
-                                                                                                    net_input_shape[0])),
-                                 dtype=np.uint8)
-            train_mask = np.array(Image.open(join(root_path, 'masks', mask_name)).resize((net_input_shape[1],
-                                                                                         net_input_shape[0])),
-                                  dtype=np.uint8)
+            # mask = np.zeros((train_mask.shape[0], train_mask.shape[1], 4))
+            # mask[train_mask == 0, 0] = 1
+            # mask[train_mask == 85, 1] = 1
+            # mask[train_mask == 170, 2] = 1
+            # mask[train_mask == 255, 3] = 1
+            # train_mask = mask
 
-            mask = np.zeros((train_mask.shape[0], train_mask.shape[1], 4))
-            mask[train_mask == 0, 0] = 1
-            mask[train_mask == 85, 1] = 1
-            mask[train_mask == 170, 2] = 1
-            mask[train_mask == 255, 3] = 1
-            train_mask = mask
-            # train_mask[train_mask == 85] = 1
-            # train_mask[train_mask == 170] = 2
-            # train_mask[train_mask == 255] = 3
-            # train_mask = train_mask[:, :, np.newaxis]
-
-            # train_img = np.transpose(train_img, (2, 0, 1))
             img_batch[count, :, :, 0] = train_img[:, :]
-            mask_batch[count, :, :, :] = train_mask[:, :, :]
+            img_batch /= 255
+            mask_batch[count, :, :, 0] = train_mask[:, :]
 
             count += 1
             if count % batchSize == 0:
                 count = 0
-                # if aug_data:
-                #     img_batch, mask_batch = augmentImages(img_batch, mask_batch)
+                if aug_data:
+                    img_batch, mask_batch = augmentImages(img_batch, mask_batch)
+
+                mask = mask_batch.squeeze(axis=-1)
+                mask_batch_hot = np.zeros((batchSize, train_mask.shape[0], train_mask.shape[1], 4))
+                mask_batch_hot[mask == 0, 0] = 1
+                mask_batch_hot[mask == 85, 1] = 1
+                mask_batch_hot[mask == 170, 2] = 1
+                mask_batch_hot[mask == 255, 3] = 1
                 # if debug:
                 #     if img_batch.ndim == 4:
                 #         plt.imshow(np.squeeze(img_batch[0, :, :, 0]), cmap='gray')
@@ -378,9 +371,10 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batchSiz
                 #     plt.savefig(join(root_path, 'logs', 'ex_train.png'), format='png', bbox_inches='tight')
                 #     plt.close()
                 if net.find('caps') != -1:
-                    yield ([img_batch, mask_batch], [mask_batch, mask_batch * img_batch])
+                    # yield ([img_batch, mask_batch_hot], [mask_batch_hot, mask_batch_hot * img_batch])
+                    yield (img_batch, mask_batch_hot)
                 else:
-                    yield (img_batch, mask_batch)
+                    yield (img_batch, mask_batch_hot)
 
         if count != 0:
             # if aug_data:
@@ -480,27 +474,29 @@ def generate_test_batches(root_path, test_list, net_input_shape, batchSize=1, nu
             else:
                 print('\nFinished making npz file.')
 
-        if numSlices == 1:
-            subSampAmt = 0
-        elif subSampAmt == -1 and numSlices > 1:
-            np.random.seed(None)
-            subSampAmt = int(rand(1) * (test_img.shape[2] * 0.05))
+        # if numSlices == 1:
+        #     subSampAmt = 0
+        # elif subSampAmt == -1 and numSlices > 1:
+        #     np.random.seed(None)
+        #     subSampAmt = int(rand(1) * (test_img.shape[2] * 0.05))
 
-        indicies = np.arange(0, test_img.shape[2] - numSlices * (subSampAmt + 1) + 1, stride)
-        for j in indicies:
-            if img_batch.ndim == 4:
-                img_batch[count, :, :, :] = test_img[:, :, j:j + numSlices * (subSampAmt + 1):subSampAmt + 1]
-            elif img_batch.ndim == 5:
-                # Assumes img and mask are single channel. Replace 0 with : if multi-channel.
-                img_batch[count, :, :, :, 0] = test_img[:, :, j:j + numSlices * (subSampAmt + 1):subSampAmt + 1]
-            else:
-                print('Error this function currently only supports 2D and 3D data.')
-                exit(0)
+        # indicies = np.arange(0, test_img.shape[2] - numSlices * (subSampAmt + 1) + 1, stride)
+        # for j in indicies:
+        # if img_batch.ndim == 4:
+        #         #     img_batch[count, :, :, :] = test_img[:, :, j:j + numSlices * (subSampAmt + 1):subSampAmt + 1]
+        #         # elif img_batch.ndim == 5:
+        #         #     # Assumes img and mask are single channel. Replace 0 with : if multi-channel.
+        #         #     img_batch[count, :, :, :, 0] = test_img[:, :, j:j + numSlices * (subSampAmt + 1):subSampAmt + 1]
+        #         # else:
+        #         #     print('Error this function currently only supports 2D and 3D data.')
+        #         #     exit(0)
+        img_batch[count, :, :, 0] = test_img[:, :]
+        img_batch /= 255
 
-            count += 1
-            if count % batchSize == 0:
-                count = 0
-                yield (img_batch)
+        count += 1
+        if count % batchSize == 0:
+            count = 0
+            yield (img_batch)
 
     if count != 0:
         yield (img_batch[:count, :, :, :])

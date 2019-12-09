@@ -11,8 +11,10 @@ This file is used for training models. Please see the README for details about t
 from __future__ import print_function
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 plt.ioff()
 
 from os.path import join
@@ -20,16 +22,20 @@ import numpy as np
 
 from keras.optimizers import Adam
 from keras import backend as K
+
 K.set_image_data_format('channels_last')
 from keras.utils import multi_gpu_model
 from keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping, ReduceLROnPlateau, TensorBoard
 import tensorflow as tf
 
-from custom_losses import dice_hard, weighted_binary_crossentropy_loss, dice_loss, margin_loss
+from custom_losses import dice_hard, weighted_binary_crossentropy_loss, dice_loss, margin_loss, WeightedCategoricalCrossEntropy
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
-PIXEL_CLASS_WEIGHTS = {1: 1.0, 2: 245.95011026887065, 3: 281.2251255452305, 4: 245.31964388353404}
-PRESENCE_CLASS_WEIGHTS = {1: 1.0, 2: 3.2855614973262033, 3: 4.388571428571429, 4: 4.938906752411576}
+CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 1.0, 1: 245.95011026887065, 2: 281.2251255452305, 3: 245.31964388353404}
+CIRRUS_PRESENCE_CLASS_WEIGHTS = {0: 1.0, 1: 3.2855614973262033, 2: 4.388571428571429, 3: 4.938906752411576}
+SPECTRALIS_PIXEL_CLASS_WEIGHTS = {0: 1.0, 1: 174.78337156649349, 2: 176.11227539183628, 3: 315.08634425918416}
+SPECTRALIS_PRESENCE_CLASS_WEIGHTS = {0: 1.0, 1: 2.337972166998012, 2: 3.4690265486725664, 3: 3.8940397350993377}
+
 
 def get_loss(root, split, net, recon_wei, choice):
     if choice == 'w_bce':
@@ -45,39 +51,46 @@ def get_loss(root, split, net, recon_wei, choice):
     elif choice == 'mar':
         loss = margin_loss(margin=0.4, downweight=0.5, pos_weight=1.0)
     elif choice == 'cce':
-        loss = 'categorical_crossentropy'
+        loss = WeightedCategoricalCrossEntropy(SPECTRALIS_PIXEL_CLASS_WEIGHTS)
     elif choice == 'scce':
         loss = 'sparse_categorical_crossentropy'
     else:
         raise Exception("Unknow loss_type")
 
     if net.find('caps') != -1:
-        return {'out_seg': loss, 'out_recon': 'mse'}, {'out_seg': 1., 'out_recon': recon_wei}
+        # return {'out_seg': loss, 'out_recon': 'mse'}, {'out_seg': 1., 'out_recon': recon_wei}
+        return {'out_seg': loss}, None
+        # return loss, None
     else:
         return loss, None
 
+
 def get_callbacks(arguments):
     if arguments.net.find('caps') != -1:
-        monitor_name = 'val_out_seg_categorical_accuracy'
+        # monitor_name = 'val_out_seg_categorical_accuracy'
+        monitor_name = 'val_categorical_accuracy'
     else:
         monitor_name = 'val_dice_hard'
 
-    csv_logger = CSVLogger(join(arguments.log_dir, arguments.output_name + '_log_' + arguments.time + '.csv'), separator=',')
+    csv_logger = CSVLogger(join(arguments.log_dir, arguments.output_name + '_log_' + arguments.time + '.csv'),
+                           separator=',')
     tb = TensorBoard(arguments.tf_log_dir, batch_size=arguments.batch_size, histogram_freq=0)
-    model_checkpoint = ModelCheckpoint(join(arguments.check_dir, arguments.output_name + '_model_' + arguments.time + '.hdf5'),
-                                       monitor=monitor_name, save_best_only=True, save_weights_only=True,
-                                       verbose=1, mode='max')
-    lr_reducer = ReduceLROnPlateau(monitor=monitor_name, factor=0.05, cooldown=0, patience=5,verbose=1, mode='max')
+    model_checkpoint = ModelCheckpoint(
+        join(arguments.check_dir, arguments.output_name + '_model_' + arguments.time + '.hdf5'),
+        monitor=monitor_name, save_best_only=True, save_weights_only=True,
+        verbose=1, mode='max')
+    lr_reducer = ReduceLROnPlateau(monitor=monitor_name, factor=0.05, cooldown=0, patience=5, verbose=1, mode='max')
     early_stopper = EarlyStopping(monitor=monitor_name, min_delta=0, patience=25, verbose=0, mode='max')
 
     return [model_checkpoint, csv_logger, lr_reducer, early_stopper, tb]
+
 
 def compile_model(args, net_input_shape, uncomp_model):
     # Set optimizer loss and metrics
     opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
         metrics = {'out_seg': 'categorical_accuracy'}
-        # metrics = {'out_seg': dice_hard}
+        # metrics = ['categorical_accuracy']
     else:
         metrics = [dice_hard]
 
@@ -103,8 +116,10 @@ def plot_training(training_history, arguments):
     f.suptitle(arguments.net, fontsize=18)
 
     if arguments.net.find('caps') != -1:
-        ax1.plot(training_history.history['out_seg_categorical_accuracy'])
-        ax1.plot(training_history.history['val_out_seg_categorical_accuracy'])
+        # ax1.plot(training_history.history['out_seg_categorical_accuracy'])
+        # ax1.plot(training_history.history['val_out_seg_categorical_accuracy'])
+        ax1.plot(training_history.history['categorical_accuracy'])
+        ax1.plot(training_history.history['val_categorical_accuracy'])
     else:
         ax1.plot(training_history.history['dice_hard'])
         ax1.plot(training_history.history['val_dice_hard'])
@@ -113,7 +128,8 @@ def plot_training(training_history, arguments):
     ax1.legend(['Train', 'Val'], loc='upper left')
     ax1.set_yticks(np.arange(0, 1.05, 0.05))
     if arguments.net.find('caps') != -1:
-        ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
+        # ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
+        ax1.set_xticks(np.arange(0, len(training_history.history['categorical_accuracy'])))
     else:
         ax1.set_xticks(np.arange(0, len(training_history.history['dice_hard'])))
     ax1.grid(True)
@@ -136,6 +152,7 @@ def plot_training(training_history, arguments):
     f.savefig(join(arguments.output_dir, arguments.output_name + '_plots_' + arguments.time + '.png'))
     plt.close()
 
+
 def train(args, train_list, val_list, u_model, net_input_shape):
     # Compile the loaded model
     model = compile_model(args=args, net_input_shape=net_input_shape, uncomp_model=u_model)
@@ -148,15 +165,14 @@ def train(args, train_list, val_list, u_model, net_input_shape):
                                batchSize=args.batch_size, numSlices=args.slices, subSampAmt=args.subsamp,
                                stride=args.stride, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
-        steps_per_epoch=2000,
+        steps_per_epoch=1059,
         validation_data=generate_train_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
-                                             batchSize=args.batch_size,  numSlices=args.slices, subSampAmt=0,
-                                             stride=20, shuff=args.shuffle_data),
-        validation_steps=500, # Set validation stride larger to see more of the data.
-        epochs=50,
+                                               batchSize=args.batch_size, numSlices=args.slices, subSampAmt=0,
+                                               stride=20, shuff=args.shuffle_data),
+        validation_steps=118,  # Set validation stride larger to see more of the data.
+        epochs=20,
         callbacks=callbacks,
-        verbose=1,
-        class_weight=PRESENCE_CLASS_WEIGHTS)
+        verbose=1)
 
     # Plot the training data collected
     plot_training(history, args)
