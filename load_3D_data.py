@@ -165,11 +165,10 @@ def convert_data_to_numpy(root_path, img_name, mask_name, net_input_shape, no_ma
             # mask = mask.astype(np.uint8)
 
             mask = np.array(Image.open(join(mask_path, mask_name)).resize((net_input_shape[1],
-                                                                             net_input_shape[0])),
-                     dtype=np.uint8)
+                                                                           net_input_shape[0])),
+                            dtype=np.uint8)
             # mask = np.array(Image.open(join(mask_path, mask_name)),
             #                 dtype=np.uint8)
-
 
         # try:
         #     f, ax = plt.subplots(1, 3, figsize=(15, 5))
@@ -371,8 +370,11 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batchSiz
                 #     plt.savefig(join(root_path, 'logs', 'ex_train.png'), format='png', bbox_inches='tight')
                 #     plt.close()
                 if net.find('caps') != -1:
-                    # yield ([img_batch, mask_batch_hot], [mask_batch_hot, mask_batch_hot * img_batch])
-                    yield (img_batch, mask_batch_hot)
+                    img_masked = mask_batch_hot * img_batch
+                    yield ([img_batch, mask_batch_hot],
+                           [mask_batch_hot, img_masked[:, :, :, 0], img_masked[:, :, :, 1], img_masked[:, :, :, 2],
+                            img_masked[:, :, :, 3]])
+                    # yield (img_batch, mask_batch_hot)
                 else:
                     yield (img_batch, mask_batch_hot)
 

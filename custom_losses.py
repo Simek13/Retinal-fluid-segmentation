@@ -14,7 +14,8 @@ from keras import backend as K
 import numpy as np
 import itertools
 
-def dice_soft(y_true, y_pred, loss_type='sorensen', axis=[1,2,3], smooth=1e-5, from_logits=False):
+
+def dice_soft(y_true, y_pred, loss_type='sorensen', axis=[1, 2, 3], smooth=1e-5, from_logits=False):
     """Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation
     i.e. labels are binary. The coefficient between 0 to 1, 1 means totally match.
@@ -72,7 +73,7 @@ def dice_soft(y_true, y_pred, loss_type='sorensen', axis=[1,2,3], smooth=1e-5, f
     return dice
 
 
-def dice_hard(y_true, y_pred, threshold=0.5, axis=[1,2,3], smooth=1e-5):
+def dice_hard(y_true, y_pred, threshold=0.5, axis=[1, 2, 3], smooth=1e-5):
     """Non-differentiable Sørensen–Dice coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation i.e. labels are binary.
     The coefficient between 0 to 1, 1 if totally match.
@@ -111,7 +112,9 @@ def dice_hard(y_true, y_pred, threshold=0.5, axis=[1,2,3], smooth=1e-5):
 
 
 def dice_loss(y_true, y_pred, from_logits=False):
-    return 1-dice_soft(y_true, y_pred, from_logits=False)
+    # return 1 - dice_soft(y_true, y_pred, from_logits=False)
+    return 1 - dice_coef(y_true, y_pred)
+
 
 def weighted_binary_crossentropy_loss(pos_weight):
     # pos_weight: A coefficient to use on the positive examples.
@@ -135,8 +138,9 @@ def weighted_binary_crossentropy_loss(pos_weight):
             output = tf.log(output / (1 - output))
 
         return tf.nn.weighted_cross_entropy_with_logits(targets=target,
-                                                       logits=output,
+                                                        logits=output,
                                                         pos_weight=pos_weight)
+
     return weighted_binary_crossentropy
 
 
@@ -164,35 +168,62 @@ def margin_loss(margin=0.4, downweight=0.5, pos_weight=1.0):
         """
         logits = raw_logits - 0.5
         positive_cost = pos_weight * labels * tf.cast(tf.less(logits, margin),
-                                       tf.float32) * tf.pow(logits - margin, 2)
+                                                      tf.float32) * tf.pow(logits - margin, 2)
         negative_cost = (1 - labels) * tf.cast(
-          tf.greater(logits, -margin), tf.float32) * tf.pow(logits + margin, 2)
+            tf.greater(logits, -margin), tf.float32) * tf.pow(logits + margin, 2)
         return 0.5 * positive_cost + downweight * 0.5 * negative_cost
 
     return _margin_loss
 
+
 class WeightedCategoricalCrossEntropy(object):
 
-  def __init__(self, weights):
-    nb_cl = len(weights)
-    self.weights = np.ones((nb_cl, nb_cl))
-    for class_idx, class_weight in weights.items():
-      self.weights[0][class_idx] = class_weight
-      self.weights[class_idx][0] = class_weight
-    self.__name__ = 'w_categorical_crossentropy'
+    def __init__(self, weights):
+        nb_cl = len(weights)
+        self.weights = np.ones((nb_cl, nb_cl))
+        for class_idx, class_weight in weights.items():
+            self.weights[0][class_idx] = class_weight
+            self.weights[class_idx][0] = class_weight
+        self.__name__ = 'w_categorical_crossentropy'
 
-  def __call__(self, y_true, y_pred):
-    return self.w_categorical_crossentropy(y_true, y_pred)
+    def __call__(self, y_true, y_pred):
+        return self.w_categorical_crossentropy(y_true, y_pred)
 
-  def w_categorical_crossentropy(self, y_true, y_pred):
-    nb_cl = len(self.weights)
-    final_mask = K.zeros_like(y_pred[..., 0])
-    y_pred_max = K.max(y_pred, axis=-1)
-    y_pred_max = K.expand_dims(y_pred_max, axis=-1)
-    y_pred_max_mat = K.equal(y_pred, y_pred_max)
-    for c_p, c_t in itertools.product(range(nb_cl), range(nb_cl)):
-        w = K.cast(self.weights[c_t, c_p], K.floatx())
-        y_p = K.cast(y_pred_max_mat[..., c_p], K.floatx())
-        y_t = K.cast(y_true[..., c_t], K.floatx())
-        final_mask += w * y_p * y_t
-    return K.categorical_crossentropy(y_true, y_pred) * final_mask
+    def w_categorical_crossentropy(self, y_true, y_pred):
+        nb_cl = len(self.weights)
+        final_mask = K.zeros_like(y_pred[..., 0])
+        y_pred_max = K.max(y_pred, axis=-1)
+        y_pred_max = K.expand_dims(y_pred_max, axis=-1)
+        y_pred_max_mat = K.equal(y_pred, y_pred_max)
+        for c_p, c_t in itertools.product(range(nb_cl), range(nb_cl)):
+            w = K.cast(self.weights[c_t, c_p], K.floatx())
+            y_p = K.cast(y_pred_max_mat[..., c_p], K.floatx())
+            y_t = K.cast(y_true[..., c_t], K.floatx())
+            final_mask += w * y_p * y_t
+        return K.categorical_crossentropy(y_true, y_pred) * final_mask
+
+
+def tversky_loss(y_true, y_pred):
+    alpha = 0.5
+    beta = 0.5
+
+    ones = K.ones(K.shape(y_true))
+    p0 = y_pred  # proba that voxels are class i
+    p1 = ones - y_pred  # proba that voxels are not class i
+    g0 = y_true
+    g1 = ones - y_true
+
+    num = K.sum(p0 * g0, (0, 1, 2, 3))
+    den = num + alpha * K.sum(p0 * g1, (0, 1, 2, 3)) + beta * K.sum(p1 * g0, (0, 1, 2, 3))
+
+    T = K.sum(num / den)  # when summing over classes, T has dynamic range [0 Ncl]
+
+    Ncl = K.cast(K.shape(y_true)[-1], 'float32')
+    return Ncl - T
+
+
+def dice_coef(y_true, y_pred, smooth=1e-7):
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred)
+    intersection = K.sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
