@@ -92,6 +92,8 @@ def CapsNetR3(input_shape, n_class=4):
     # Decoder network.
     _, H, W, C, A = seg_caps.get_shape()
     y = layers.Input(shape=input_shape[:-1] + (4,))
+    masked_by_y = Mask()([seg_caps, y])  # The true label is used to mask the output of capsule layer. For training
+    masked = Mask()(seg_caps)
 
     def shared_decoder(mask_layer):
         # recon_remove_dim = layers.Reshape((H, W, A))(mask_layer)
@@ -132,14 +134,14 @@ def CapsNetR3(input_shape, n_class=4):
 
         return out_recon
 
-    masked_by_y = Mask()([shared_decoder(seg_caps), y])  # The true label is used to mask the output of capsule layer. For training
-    masked = Mask()(shared_decoder(seg_caps))  # Mask using the capsule with maximal length. For prediction
+    # masked_by_y = Mask()([shared_decoder(seg_caps), y])  # The true label is used to mask the output of capsule layer. For training
+    # masked = Mask()(shared_decoder(seg_caps))  # Mask using the capsule with maximal length. For prediction
     masked_by_y_dec = shared_decoder(masked_by_y)
 
-    masked_by_y_dec0 = layers.Lambda(lambda x: x[:, :, :, 0, :])(masked_by_y_dec)
-    masked_by_y_dec1 = layers.Lambda(lambda x: x[:, :, :, 1, :])(masked_by_y_dec)
-    masked_by_y_dec2 = layers.Lambda(lambda x: x[:, :, :, 2, :])(masked_by_y_dec)
-    masked_by_y_dec3 = layers.Lambda(lambda x: x[:, :, :, 3, :])(masked_by_y_dec)
+    masked_by_y_dec0 = layers.Lambda(lambda x: x[:, :, :, 0], name='recon0')(masked_by_y_dec)
+    masked_by_y_dec1 = layers.Lambda(lambda x: x[:, :, :, 1], name='recon1')(masked_by_y_dec)
+    masked_by_y_dec2 = layers.Lambda(lambda x: x[:, :, :, 2], name='recon2')(masked_by_y_dec)
+    masked_by_y_dec3 = layers.Lambda(lambda x: x[:, :, :, 3], name='recon3')(masked_by_y_dec)
 
     # Models for training and evaluation (prediction)
     train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y_dec0, masked_by_y_dec1, masked_by_y_dec2, masked_by_y_dec3])

@@ -28,7 +28,8 @@ from keras.utils import multi_gpu_model
 from keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping, ReduceLROnPlateau, TensorBoard
 import tensorflow as tf
 
-from custom_losses import dice_hard, weighted_binary_crossentropy_loss, dice_loss, margin_loss, WeightedCategoricalCrossEntropy
+from custom_losses import dice_hard, weighted_binary_crossentropy_loss, dice_loss, margin_loss, \
+    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
 CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 1.0, 1: 245.95011026887065, 2: 281.2251255452305, 3: 245.31964388353404}
@@ -58,9 +59,10 @@ def get_loss(root, split, net, recon_wei, choice):
         raise Exception("Unknow loss_type")
 
     if net.find('caps') != -1:
-        # return {'out_seg': loss, 'out_recon': 'mse'}, {'out_seg': 1., 'out_recon': recon_wei}
-        return {'out_seg': loss}, None
-        # return loss, None
+        return {'out_seg': loss, 'recon0': weighted_mse, 'recon1': weighted_mse, 'recon2': weighted_mse,
+                'recon3': weighted_mse}, {'out_seg': 1., 'recon0': recon_wei, 'recon1': recon_wei, 'recon2': recon_wei,
+                                          'recon3': recon_wei}
+        # return {'out_seg': loss}, None
     else:
         return loss, None
 
@@ -89,8 +91,8 @@ def compile_model(args, net_input_shape, uncomp_model):
     # Set optimizer loss and metrics
     opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
-        metrics = {'out_seg': 'categorical_accuracy'}
-        # metrics = ['categorical_accuracy']
+        # metrics = {'out_seg': 'categorical_accuracy'}
+        metrics = {'out_seg': weighted_dice_coef}
     else:
         metrics = [dice_hard]
 

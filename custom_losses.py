@@ -113,7 +113,7 @@ def dice_hard(y_true, y_pred, threshold=0.5, axis=[1, 2, 3], smooth=1e-5):
 
 def dice_loss(y_true, y_pred, from_logits=False):
     # return 1 - dice_soft(y_true, y_pred, from_logits=False)
-    return 1 - dice_coef(y_true, y_pred)
+    return 1 - weighted_dice_coef(y_true, y_pred)
 
 
 def weighted_binary_crossentropy_loss(pos_weight):
@@ -213,8 +213,8 @@ def tversky_loss(y_true, y_pred):
     g0 = y_true
     g1 = ones - y_true
 
-    num = K.sum(p0 * g0, (0, 1, 2, 3))
-    den = num + alpha * K.sum(p0 * g1, (0, 1, 2, 3)) + beta * K.sum(p1 * g0, (0, 1, 2, 3))
+    num = K.sum(p0 * g0, (0, 1, 2))
+    den = num + alpha * K.sum(p0 * g1, (0, 1, 2)) + beta * K.sum(p1 * g0, (0, 1, 2))
 
     T = K.sum(num / den)  # when summing over classes, T has dynamic range [0 Ncl]
 
@@ -222,8 +222,41 @@ def tversky_loss(y_true, y_pred):
     return Ncl - T
 
 
-def dice_coef(y_true, y_pred, smooth=1e-7):
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+def weighted_dice_coef(y_true, y_pred, smooth=1e-7):
+    # n_el = K.int_shape(K.flatten(y_pred))[0]
+    w = K.sum(y_true, axis=(0, 1, 2))
+    w = K.sum(w) / (w + K.constant(1, dtype=tf.float32))
+    w = w / K.max(w)
+    y_pred = K.one_hot(K.argmax(y_pred, axis=-1), 4)
+    numerator = y_true * y_pred
+    numerator = w * K.sum(numerator, axis=(0, 1, 2))
+    numerator = K.sum(numerator)
+
+    denominator = y_true + y_pred
+    denominator = w * K.sum(denominator, axis=(0, 1, 2))
+    denominator = K.sum(denominator)
+
+    return (2. * numerator + smooth) / (denominator + smooth)
+
+
+def weighted_mse(y_true, y_pred):
+    b, height, width = K.int_shape(y_true)
+    n_el = b * height * width
+    count_positive = tf.math.count_nonzero(y_true)
+    count_negative = K.constant(n_el, dtype=tf.int32) - count_positive
+    w1 = w2 = 1
+    if count_negative != 0 and count_positive != 0:
+        if count_negative > count_positive:
+            w1 = count_positive / count_negative
+        else:
+            w2 = count_negative / count_positive
+    zero = tf.constant(0, dtype=tf.float32)
+    w = tf.where(tf.not_equal(y_true, zero), K.constant(w2, dtype=tf.float32),
+                                K.constant(w1, dtype=tf.float32))
+    # negative_indices = tf.where(tf.equal(y_true, zero))
+    # w = np.zeros((height, width))
+    # w[positive_indices] = w2
+    # w[negative_indices] = w1
+    # w_t = K.eval(w)
+
+    return w * tf.losses.MSE(y_true, y_pred)
