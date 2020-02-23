@@ -2,10 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="f4cff466-3e87-4502-bf4d-1f909e54eb54" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/custom_loss_test.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/capsnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/capsnet.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/custom_losses.py" beforeDir="false" afterPath="$PROJECT_DIR$/custom_losses.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/load_3D_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/load_3D_data.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -148,6 +147,14 @@
       <workItem from="1578077722359" duration="2633000" />
       <workItem from="1578244545836" duration="3407000" />
       <workItem from="1578350089619" duration="22675000" />
+      <workItem from="1579376685761" duration="65000" />
+      <workItem from="1580151650927" duration="739000" />
+      <workItem from="1580251108361" duration="603000" />
+      <workItem from="1580409777231" duration="613000" />
+      <workItem from="1580496545117" duration="3134000" />
+      <workItem from="1581611533888" duration="4493000" />
+      <workItem from="1581860072642" duration="18648000" />
+      <workItem from="1582488017602" duration="400000" />
     </task>
     <servers />
   </component>
@@ -191,16 +198,6 @@
           <option name="timeStamp" value="58" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/custom_losses.py</url>
-          <line>242</line>
-          <option name="timeStamp" value="81" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/load_3D_data.py</url>
-          <line>372</line>
-          <option name="timeStamp" value="87" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/custom_loss_test.py</url>
           <line>32</line>
           <option name="timeStamp" value="91" />
@@ -216,6 +213,7 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/SegCaps$main.coverage" NAME="main Coverage Results" MODIFIED="1572120712478" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Retinal_fluid_segmentation$main.coverage" NAME="main Coverage Results" MODIFIED="1578516551263" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Retinal_fluid_segmentation$loss_test.coverage" NAME="loss_test Coverage Results" MODIFIED="1580504508045" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Retinal_fluid_segmentation$main.coverage" NAME="main Coverage Results" MODIFIED="1581953450987" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

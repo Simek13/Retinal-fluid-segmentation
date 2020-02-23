@@ -111,11 +111,6 @@ def dice_hard(y_true, y_pred, threshold=0.5, axis=[1, 2, 3], smooth=1e-5):
     return hard_dice
 
 
-def dice_loss(y_true, y_pred, from_logits=False):
-    # return 1 - dice_soft(y_true, y_pred, from_logits=False)
-    return 1 - weighted_dice_coef(y_true, y_pred)
-
-
 def weighted_binary_crossentropy_loss(pos_weight):
     # pos_weight: A coefficient to use on the positive examples.
     def weighted_binary_crossentropy(target, output, from_logits=False):
@@ -239,24 +234,40 @@ def weighted_dice_coef(y_true, y_pred, smooth=1e-7):
     return (2. * numerator + smooth) / (denominator + smooth)
 
 
-def weighted_mse(y_true, y_pred):
-    b, height, width = K.int_shape(y_true)
-    n_el = b * height * width
-    count_positive = tf.math.count_nonzero(y_true)
-    count_negative = K.constant(n_el, dtype=tf.int32) - count_positive
-    w1 = w2 = 1
-    if count_negative != 0 and count_positive != 0:
-        if count_negative > count_positive:
-            w1 = count_positive / count_negative
-        else:
-            w2 = count_negative / count_positive
-    zero = tf.constant(0, dtype=tf.float32)
-    w = tf.where(tf.not_equal(y_true, zero), K.constant(w2, dtype=tf.float32),
-                                K.constant(w1, dtype=tf.float32))
-    # negative_indices = tf.where(tf.equal(y_true, zero))
-    # w = np.zeros((height, width))
-    # w[positive_indices] = w2
-    # w[negative_indices] = w1
-    # w_t = K.eval(w)
+def weighted_dice_loss(y_true, y_pred, from_logits=False):
+    # return 1 - dice_soft(y_true, y_pred, from_logits=False)
+    return 1 - weighted_dice_coef(y_true, y_pred)
 
-    return w * tf.losses.MSE(y_true, y_pred)
+
+def weighted_mse(y_true, y_pred):
+    # n_el = K.constant(K.flatten(y_true).shape[0], dtype='int32')
+    n_el = K.constant(256*256, dtype='int64')
+    count_positive = tf.math.count_nonzero(y_true)
+    # count_negative = K.update_sub(n_el, count_positive)
+    count_negative = n_el - count_positive
+    w1 = K.switch(
+        K.all(
+            K.stack((
+                K.greater(count_positive, count_negative),
+                K.greater(count_negative, K.constant(0, dtype='int64'))
+            )
+            )
+        ),
+        count_positive / count_negative,
+        K.constant(1, dtype='float64')
+    )
+    w2 = K.switch(
+        K.all(
+            K.stack((
+                K.greater(count_negative, count_positive),
+                K.greater(count_positive, K.constant(0, dtype='int64'))
+            )
+            )
+        ),
+        count_negative / count_positive,
+        K.constant(1, dtype='float64')
+    )
+    w = tf.where(tf.not_equal(y_true, K.constant(0, dtype='float32')), w2, w1)
+
+    return K.cast(w, dtype='float32') * tf.losses.MSE(y_true, y_pred)
+

@@ -28,8 +28,8 @@ from keras.utils import multi_gpu_model
 from keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping, ReduceLROnPlateau, TensorBoard
 import tensorflow as tf
 
-from custom_losses import dice_hard, weighted_binary_crossentropy_loss, dice_loss, margin_loss, \
-    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse
+from custom_losses import dice_hard, weighted_binary_crossentropy_loss, margin_loss, \
+    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse, weighted_dice_loss
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
 CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 1.0, 1: 245.95011026887065, 2: 281.2251255452305, 3: 245.31964388353404}
@@ -45,7 +45,7 @@ def get_loss(root, split, net, recon_wei, choice):
     elif choice == 'bce':
         loss = 'binary_crossentropy'
     elif choice == 'dice':
-        loss = dice_loss
+        loss = weighted_dice_loss
     elif choice == 'w_mar':
         pos_class_weight = load_class_weights(root=root, split=split)
         loss = margin_loss(margin=0.4, downweight=0.5, pos_weight=pos_class_weight)
@@ -70,7 +70,7 @@ def get_loss(root, split, net, recon_wei, choice):
 def get_callbacks(arguments):
     if arguments.net.find('caps') != -1:
         # monitor_name = 'val_out_seg_categorical_accuracy'
-        monitor_name = 'val_categorical_accuracy'
+        monitor_name = 'val_out_seg_loss'
     else:
         monitor_name = 'val_dice_hard'
 
@@ -120,18 +120,18 @@ def plot_training(training_history, arguments):
     if arguments.net.find('caps') != -1:
         # ax1.plot(training_history.history['out_seg_categorical_accuracy'])
         # ax1.plot(training_history.history['val_out_seg_categorical_accuracy'])
-        ax1.plot(training_history.history['categorical_accuracy'])
-        ax1.plot(training_history.history['val_categorical_accuracy'])
+        ax1.plot(training_history.history['out_seg_weighted_dice_coef'])
+        ax1.plot(training_history.history['val_out_seg_weighted_dice_coef'])
     else:
         ax1.plot(training_history.history['dice_hard'])
         ax1.plot(training_history.history['val_dice_hard'])
-    ax1.set_title('Categorical Accuracy')
-    ax1.set_ylabel('Accuracy', fontsize=12)
+    ax1.set_title('Dice coefficient')
+    ax1.set_ylabel('Dice', fontsize=12)
     ax1.legend(['Train', 'Val'], loc='upper left')
     ax1.set_yticks(np.arange(0, 1.05, 0.05))
     if arguments.net.find('caps') != -1:
         # ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
-        ax1.set_xticks(np.arange(0, len(training_history.history['categorical_accuracy'])))
+        ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_weighted_dice_coef'])))
     else:
         ax1.set_xticks(np.arange(0, len(training_history.history['dice_hard'])))
     ax1.grid(True)
@@ -168,7 +168,7 @@ def train(args, train_list, val_list, u_model, net_input_shape):
                                stride=args.stride, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
         steps_per_epoch=1059,
-        validation_data=generate_train_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
+        validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                                batchSize=args.batch_size, numSlices=args.slices, subSampAmt=0,
                                                stride=20, shuff=args.shuffle_data),
         validation_steps=118,  # Set validation stride larger to see more of the data.
