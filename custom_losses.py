@@ -218,7 +218,6 @@ def tversky_loss(y_true, y_pred):
 
 
 def weighted_dice_coef(y_true, y_pred, smooth=1e-7):
-    # n_el = K.int_shape(K.flatten(y_pred))[0]
     w = K.sum(y_true, axis=(0, 1, 2))
     w = K.sum(w) / (w + K.constant(1, dtype=tf.float32))
     w = w / K.max(w)
@@ -239,35 +238,22 @@ def weighted_dice_loss(y_true, y_pred, from_logits=False):
     return 1 - weighted_dice_coef(y_true, y_pred)
 
 
-def weighted_mse(y_true, y_pred):
-    # n_el = K.constant(K.flatten(y_true).shape[0], dtype='int32')
+def weighted_mse(y_true, y_pred, smooth=1e-7):
     n_el = K.constant(256*256, dtype='int64')
     count_positive = tf.math.count_nonzero(y_true)
-    # count_negative = K.update_sub(n_el, count_positive)
-    count_negative = n_el - count_positive
-    w1 = K.switch(
-        K.all(
-            K.stack((
-                K.greater(count_positive, count_negative),
-                K.greater(count_negative, K.constant(0, dtype='int64'))
-            )
-            )
-        ),
-        count_positive / count_negative,
+    count_zero = n_el - count_positive
+    w_zero = K.switch(
+        K.greater(count_zero, count_positive),
+        count_positive / count_zero + smooth,
         K.constant(1, dtype='float64')
     )
-    w2 = K.switch(
-        K.all(
-            K.stack((
-                K.greater(count_negative, count_positive),
-                K.greater(count_positive, K.constant(0, dtype='int64'))
-            )
-            )
-        ),
-        count_negative / count_positive,
+    w_positive = K.switch(
+        K.greater(count_positive, count_zero),
+        count_zero / count_positive + smooth,
         K.constant(1, dtype='float64')
     )
-    w = tf.where(tf.not_equal(y_true, K.constant(0, dtype='float32')), w2, w1)
+    w = tf.where(K.equal(y_true, K.constant(0)), w_zero, w_positive)
 
-    return K.cast(w, dtype='float32') * tf.losses.MSE(y_true, y_pred)
+    return K.mean(w * K.square(y_true - y_pred))
+
 
