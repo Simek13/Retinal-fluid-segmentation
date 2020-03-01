@@ -217,10 +217,14 @@ def tversky_loss(y_true, y_pred):
     return Ncl - T
 
 
-def weighted_dice_coef(y_true, y_pred, smooth=1e-7):
-    w = K.sum(y_true, axis=(0, 1, 2))
-    w = K.sum(w) / (w + K.constant(1, dtype=tf.float32))
-    w = w / K.max(w)
+def weighted_dice(y_true, y_pred, weights, smooth=1e-7):
+
+    if not weights:
+        w = K.sum(y_true, axis=(0, 1, 2))
+        w = K.sum(w) / (w + K.constant(1, dtype=tf.float32))
+        w = w / K.max(w)
+    else:
+        w = K.constant(weights)
     y_pred = K.one_hot(K.argmax(y_pred, axis=-1), 4)
     numerator = y_true * y_pred
     numerator = w * K.sum(numerator, axis=(0, 1, 2))
@@ -233,27 +237,45 @@ def weighted_dice_coef(y_true, y_pred, smooth=1e-7):
     return (2. * numerator + smooth) / (denominator + smooth)
 
 
-def weighted_dice_loss(y_true, y_pred, from_logits=False):
-    # return 1 - dice_soft(y_true, y_pred, from_logits=False)
-    return 1 - weighted_dice_coef(y_true, y_pred)
+def weighted_dice_coef(weights=()):
+
+    def coef(y_true, y_pred, from_logits=False):
+        return weighted_dice(y_true, y_pred, weights)
+
+    return coef
 
 
-def weighted_mse(y_true, y_pred, smooth=1e-7):
-    n_el = K.constant(256*256, dtype='int64')
-    count_positive = tf.math.count_nonzero(y_true)
-    count_zero = n_el - count_positive
-    w_zero = K.switch(
-        K.greater(count_zero, count_positive),
-        count_positive / count_zero + smooth,
-        K.constant(1, dtype='float64')
-    )
-    w_positive = K.switch(
-        K.greater(count_positive, count_zero),
-        count_zero / count_positive + smooth,
-        K.constant(1, dtype='float64')
-    )
-    w = tf.where(K.equal(y_true, K.constant(0)), w_zero, w_positive)
+def weighted_dice_loss(weights=()):
 
-    return K.mean(w * K.square(y_true - y_pred))
+    def loss(y_true, y_pred, from_logits=False):
+        return 1 - weighted_dice(y_true, y_pred, weights)
+
+    return loss
+
+
+def weighted_mse_loss(weight=-1):
+
+    def weighted_mse(y_true, y_pred, smooth=1e-7):
+        if weight == -1:
+            n_el = K.constant(256 * 256, dtype='int64')
+            count_positive = tf.math.count_nonzero(y_true)
+            count_zero = n_el - count_positive
+            w_zero = K.switch(
+                K.greater(count_zero, count_positive),
+                count_positive / count_zero + K.constant(smooth, dtype='float64'),
+                K.constant(1, dtype='float64')
+            )
+            w_positive = K.switch(
+                K.greater(count_positive, count_zero),
+                count_zero / count_positive + K.constant(smooth, dtype='float64'),
+                K.constant(1, dtype='float64')
+            )
+            w = tf.where(K.equal(y_true, K.constant(0)), w_zero, w_positive)
+        else:
+            w = tf.where(K.equal(y_true, K.constant(0)), K.constant(1, dtype='float32'), K.constant(weight))
+
+        return K.mean(w * K.square(y_true - y_pred))
+
+    return weighted_mse
 
 

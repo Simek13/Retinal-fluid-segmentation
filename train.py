@@ -29,13 +29,20 @@ from keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping, ReduceLRO
 import tensorflow as tf
 
 from custom_losses import dice_hard, weighted_binary_crossentropy_loss, margin_loss, \
-    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse, weighted_dice_loss
+    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse_loss, weighted_dice_loss
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
-CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 1.0, 1: 245.95011026887065, 2: 281.2251255452305, 3: 245.31964388353404}
-CIRRUS_PRESENCE_CLASS_WEIGHTS = {0: 1.0, 1: 3.2855614973262033, 2: 4.388571428571429, 3: 4.938906752411576}
-SPECTRALIS_PIXEL_CLASS_WEIGHTS = {0: 1.0, 1: 174.78337156649349, 2: 176.11227539183628, 3: 315.08634425918416}
-SPECTRALIS_PRESENCE_CLASS_WEIGHTS = {0: 1.0, 1: 2.337972166998012, 2: 3.4690265486725664, 3: 3.8940397350993377}
+# CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 0.003555870045612856, 1: 0.874566629820256, 2: 1.0, 3: 0.8723247732858718}
+# CIRRUS_PRESENCE_CLASS_WEIGHTS = {0: 0.20247395833333331, 1: 0.6652406417112299, 2: 0.8885714285714286, 3: 1.0}
+# SPECTRALIS_PIXEL_CLASS_WEIGHTS = {0: 0.0031737332265260555, 1: 0.5547157937848298, 2: 0.5589333800101778, 3: 1.0}
+# SPECTRALIS_PRESENCE_CLASS_WEIGHTS = {0: 0.2568027210884354, 1: 0.6003976143141153, 2: 0.8908554572271387, 3: 1.0}
+C_PIXEL = (0.003555870045612856, 0.874566629820256, 1.0, 0.8723247732858718)
+C_PRESENCE = (0.20247395833333331, 0.6652406417112299, 0.8885714285714286, 1.0)
+S_PIXEL = (0.0031737332265260555, 0.5547157937848298, 0.5589333800101778, 1.0)
+S_PRESENCE = (0.2568027210884354, 0.6003976143141153, 0.8908554572271387, 1.0)
+S_PRESENCE_MSE = (1.0, 2.337972166998012, 3.4690265486725664, 3.8940397350993377)
+S_PIXEL_MSE = (0.014573297188993577, 176.3305415840263, 177.67881191975138, 318.6781911942668)
+CCE_WEIGHTS = (1.0, 174.78337156649349, 176.11227539183628, 315.08634425918416)
 
 
 def get_loss(root, split, net, recon_wei, choice):
@@ -45,23 +52,27 @@ def get_loss(root, split, net, recon_wei, choice):
     elif choice == 'bce':
         loss = 'binary_crossentropy'
     elif choice == 'dice':
-        loss = weighted_dice_loss
+        loss = weighted_dice_loss(S_PRESENCE)
     elif choice == 'w_mar':
         pos_class_weight = load_class_weights(root=root, split=split)
         loss = margin_loss(margin=0.4, downweight=0.5, pos_weight=pos_class_weight)
     elif choice == 'mar':
         loss = margin_loss(margin=0.4, downweight=0.5, pos_weight=1.0)
     elif choice == 'cce':
-        loss = WeightedCategoricalCrossEntropy(SPECTRALIS_PIXEL_CLASS_WEIGHTS)
+        loss = WeightedCategoricalCrossEntropy({k: v for k, v in enumerate(S_PRESENCE_MSE)})
     elif choice == 'scce':
         loss = 'sparse_categorical_crossentropy'
     else:
         raise Exception("Unknow loss_type")
 
     if net.find('caps') != -1:
-        return {'out_seg': loss, 'recon0': weighted_mse, 'recon1': weighted_mse, 'recon2': weighted_mse,
-                'recon3': weighted_mse}, {'out_seg': 1., 'recon0': recon_wei, 'recon1': recon_wei, 'recon2': recon_wei,
-                                          'recon3': recon_wei}
+        return {'out_seg': loss, 'recon0': weighted_mse_loss(S_PIXEL_MSE[0]),
+                'recon1': weighted_mse_loss(S_PIXEL_MSE[1]),
+                'recon2': weighted_mse_loss(S_PIXEL_MSE[2]),
+                'recon3': weighted_mse_loss(S_PIXEL_MSE[3])}, {'out_seg': 1., 'recon0': recon_wei,
+                                                                                     'recon1': recon_wei,
+                                                                                     'recon2': recon_wei,
+                                                                                     'recon3': recon_wei}
         # return {'out_seg': loss}, None
     else:
         return loss, None
@@ -92,7 +103,7 @@ def compile_model(args, net_input_shape, uncomp_model):
     opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
         # metrics = {'out_seg': 'categorical_accuracy'}
-        metrics = {'out_seg': weighted_dice_coef}
+        metrics = {'out_seg': weighted_dice_coef(S_PRESENCE)}
     else:
         metrics = [dice_hard]
 
@@ -120,8 +131,8 @@ def plot_training(training_history, arguments):
     if arguments.net.find('caps') != -1:
         # ax1.plot(training_history.history['out_seg_categorical_accuracy'])
         # ax1.plot(training_history.history['val_out_seg_categorical_accuracy'])
-        ax1.plot(training_history.history['out_seg_weighted_dice_coef'])
-        ax1.plot(training_history.history['val_out_seg_weighted_dice_coef'])
+        ax1.plot(training_history.history['out_seg_coef'])
+        ax1.plot(training_history.history['val_out_seg_coef'])
     else:
         ax1.plot(training_history.history['dice_hard'])
         ax1.plot(training_history.history['val_dice_hard'])
@@ -131,7 +142,7 @@ def plot_training(training_history, arguments):
     ax1.set_yticks(np.arange(0, 1.05, 0.05))
     if arguments.net.find('caps') != -1:
         # ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
-        ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_weighted_dice_coef'])))
+        ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_coef'])))
     else:
         ax1.set_xticks(np.arange(0, len(training_history.history['dice_hard'])))
     ax1.grid(True)
@@ -169,10 +180,10 @@ def train(args, train_list, val_list, u_model, net_input_shape):
         max_queue_size=40, workers=4, use_multiprocessing=False,
         steps_per_epoch=1059,
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
-                                               batchSize=args.batch_size, numSlices=args.slices, subSampAmt=0,
-                                               stride=20, shuff=args.shuffle_data),
+                                             batchSize=args.batch_size, numSlices=args.slices, subSampAmt=0,
+                                             stride=20, shuff=args.shuffle_data),
         validation_steps=118,  # Set validation stride larger to see more of the data.
-        epochs=20,
+        epochs=10,
         callbacks=callbacks,
         verbose=1)
 

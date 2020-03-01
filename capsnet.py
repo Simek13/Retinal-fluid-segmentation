@@ -146,8 +146,8 @@ def CapsNetR3(input_shape, n_class=4):
     # Models for training and evaluation (prediction)
     train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y_dec0, masked_by_y_dec1, masked_by_y_dec2, masked_by_y_dec3])
     # train_model = models.Model(inputs=x, outputs=out_seg)
-    eval_model = models.Model(inputs=x, outputs=[out_seg, shared_decoder(masked)])
-    # eval_model = models.Model(inputs=x, outputs=out_seg)
+    # eval_model = models.Model(inputs=x, outputs=[out_seg, shared_decoder(masked)])
+    eval_model = models.Model(inputs=x, outputs=out_seg)
 
     # manipulate model
     # noise = layers.Input(shape=((H, W, C, A)))

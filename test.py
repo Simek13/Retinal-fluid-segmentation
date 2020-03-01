@@ -178,12 +178,12 @@ def test(args, test_list, model_list, net_input_shape):
 
             # Plot Qual Figure
             print('Creating Qualitative Figure for Quick Reference')
-            f, ax = plt.subplots(1, 3, figsize=(15, 5))
+            f, ax = plt.subplots(1, 4, figsize=(15, 5))
 
             ax[0].imshow(img_data, alpha=1, cmap='gray')
-            ax[0].imshow(output_bin, alpha=0.5, cmap='Blues')
-            ax[0].imshow(mask_data, alpha=0.35, cmap='Oranges')
-            ax[0].imshow(mask_data_orig, alpha=0.2, cmap='Reds')
+            ax[1].imshow(output_bin, alpha=0.5, cmap='Blues')
+            ax[2].imshow(mask_data, alpha=0.35, cmap='Oranges')
+            ax[3].imshow(mask_data_orig, alpha=0.2, cmap='Reds')
             # ax[0].set_title('Slice {}/{}'.format(img_data.shape[0] // 3, img_data.shape[0]))
             # ax[0].axis('off')
             #
