@@ -305,7 +305,8 @@ class DeconvCapsuleLayer(layers.Layer):
 
 class PrimaryCaps2dMatwo(layers.Layer):
     def __init__(self, kernel_size, num_capsule, pos_dim, app_dim, op, strides=1, padding='same',
-                 kernel_initializer='truncated_normal', data_format="channels_last", debug_print=True, **kwargs):
+                 kernel_initializer='truncated_normal', activation='relu', data_format="channels_last",
+                 is_training=False, debug_print=True, **kwargs):
         super(PrimaryCaps2dMatwo, self).__init__(**kwargs)
         self.kernel_size = kernel_size
         self.num_capsule = num_capsule
@@ -315,39 +316,35 @@ class PrimaryCaps2dMatwo(layers.Layer):
         self.strides = strides
         self.padding = padding
         self.kernel_initializer = initializers.get(kernel_initializer)
+        self.activation = activation
         self.data_format = data_format
+        self.is_training = is_training
         self.debug_print = debug_print
 
     def build(self, input_shape):
         assert len(input_shape) == 4, "The input Tensor should have shape=[batch/N, channel/z_0, height/H_0, width/W_0]"
+        self.batch = input_shape[0]
         self.channels = input_shape[1]
         self.input_height = input_shape[2]
         self.input_width = input_shape[3]
 
-        # Transform matrix
-        self.W_app = self.add_weight(shape=[self.app_dim[1], self.app_dim[1],
-                                            1, self.num_capsule],
-                                     initializer=self.kernel_initializer,
-                                     name='W_app')
-
-        self.W_pos = self.add_weight(shape=[self.app_dim[0], self.app_dim[1], self.num_capsule],
-                                     initializer=self.kernel_initializer,
-                                     name='W_pos')
-
         self.built = True
 
     def call(self, input_tensor, training=None):
-
-        N, z_0, H_0, W_0 = input_tensor.get_shape().as_list()
         # Create the appearance projection matrix
         ones_kernel = K.ones([1, 1, 1, 1])
-        mult_app_all = K.conv2d(ones_kernel, self.W_app, (self.strides, self.strides), padding=self.padding,
-                                data_format=self.data_format)
+        mult_app_all = layers.Conv2D(self.num_capsule * self.app_dim[1] * self.app_dim[1], kernel_size=1, strides=1,
+                                     kernel_initializer=self.kernel_initializer, padding=self.padding,
+                                     use_bias=False, trainable=self.is_training, name='mult_app')(ones_kernel)
         mult_app = K.reshape(mult_app_all, [self.num_capsule, self.app_dim[1], self.app_dim[1]])
 
         # Extract appearance value
-        u_spat_t = K.conv2d(input_tensor, self.W_pos, (self.strides, self.strides),
-                            padding=self.padding, data_format=self.data_format)
+        u_spat_t = layers.Conv2D(self.num_capsule * self.app_dim[0] * self.app_dim[
+            1], kernel_size=self.kernel_size, strides=self.strides,
+                                 kernel_initializer=self.kernel_initializer,
+                                 activation=self.activation, padding=self.padding, use_bias=True,
+                                 data_format=self.data_format, trainable=self.is_training,
+                                 name='spatial_k')(input_tensor)
 
         H_1 = u_spat_t.get_shape()[2]
         W_1 = u_spat_t.get_shape()[3]
@@ -355,21 +352,21 @@ class PrimaryCaps2dMatwo(layers.Layer):
                                (0, 2, 3, 1))  # [N, t_1 * z_app * z_pos, H_1, W_1] => [N, H_1, W_1, t_1 * z_app * z_pos]
 
         # Initialize the pose matrix with identity
-        u_t_pos = K.zeros([N, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]], dtype='float32')
-        u_t_pos = K.reshape(u_t_pos, [N * H_1 * W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
+        u_t_pos = K.zeros([self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]], dtype='float32')
+        u_t_pos = K.reshape(u_t_pos, [self.batch * H_1 * W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
         identity = K.eye(self.pos_dim[1])
         identity = identity[self.pos_dim[1] - self.pos_dim[0]:, :]
         u_t_pos += identity
-        u_hat_t_pos = tf.reshape(u_t_pos, [N, H_1, W_1, self.num_capsule, np.product(self.pos_dim)])
+        u_hat_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, np.prod(self.pos_dim)])
 
         # Apply the matrix multiplication to the appearance matrix
-        u_t_app = tf.reshape(u_t_app, [N, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
+        u_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
         u_t_app = matmult2d(u_t_app, mult_app)
-        u_hat_t_app = tf.reshape(u_t_app, [N, H_1, W_1, self.num_capsule, np.product(self.app_dim)])
+        u_hat_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, np.prod(self.app_dim)])
 
         # Squash the appearance matrix (Psquashing the pose won't change it)
         v_pos = u_hat_t_pos
-        v_app = _squash(u_hat_t_app)
+        v_app = matwo_squash(u_hat_t_app)
 
         v = K.concatenate([v_pos, v_app], axis=-1)
         outputs = tf.transpose(v, (
@@ -391,6 +388,7 @@ class PrimaryCaps2dMatwo(layers.Layer):
         return outputs
 
     def compute_output_shape(self, input_shape):
+        # TODO promjeni
         space = input_shape[1:-2]
         new_space = []
         for i in range(len(space)):
@@ -408,10 +406,16 @@ class PrimaryCaps2dMatwo(layers.Layer):
         config = {
             'kernel_size': self.kernel_size,
             'num_capsule': self.num_capsule,
+            'pos_dim': self.pos_dim,
+            'app_dim': self.app_dim,
+            'op': self.op,
             'strides': self.strides,
             'padding': self.padding,
-            'routings': self.routings,
-            'kernel_initializer': initializers.serialize(self.kernel_initializer)
+            'kernel_initializer': initializers.serialize(self.kernel_initializer),
+            'activation': self.activation,
+            'data_format': self.data_format,
+            'is_training': self.is_training,
+            'debug_print': self.debug_print
         }
         base_config = super(PrimaryCaps2dMatwo, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -419,7 +423,7 @@ class PrimaryCaps2dMatwo(layers.Layer):
 
 class Caps2dMatwo(layers.Layer):
     def __init__(self, kernel_size, num_capsule, pos_dim, app_dim, op, routing_type, routings, strides, padding='same',
-                 kernel_initializer='truncated_normal', coord_add=True, debug_print=True, **kwargs):
+                 kernel_initializer='truncated_normal', coord_add=True, is_training=False, debug_print=True, **kwargs):
         super(Caps2dMatwo, self).__init__(**kwargs)
         self.kernel_size = kernel_size
         self.num_capsule = num_capsule
@@ -432,82 +436,161 @@ class Caps2dMatwo(layers.Layer):
         self.routing_type = routing_type
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.coord_add = coord_add
+        self.is_training = is_training
         self.debug_print = debug_print
 
     def build(self, input_shape):
-        assert len(input_shape) == 5, "The input Tensor should have shape=[batch/N, capsule_type/t_0, channel/z_0, height/H_0, width/W_0]"
+        assert len(
+            input_shape) == 5, "The input Tensor should have shape=[batch/N, capsule_type/t_0, channel/z_0, height/H_0, width/W_0]"
+        self.batch = input_shape[0]
         self.input_num_capsule = input_shape[1]
         self.channels = input_shape[2]
         self.input_height = input_shape[3]
         self.input_width = input_shape[4]
 
-        # Transform matrix
-        self.W_app = self.add_weight(shape=[self.app_dim[1], self.app_dim[1],
-                                            1, self.num_capsule],
-                                     initializer=self.kernel_initializer,
-                                     name='W_app')
-
-        self.W_pos = self.add_weight(shape=[self.app_dim[0], self.app_dim[1], self.num_capsule],
-                                     initializer=self.kernel_initializer,
-                                     name='W_pos')
-
         self.built = True
 
     def call(self, input_tensor, training=None):
+        z_app = np.product(self.app_dim)
+        z_pos = np.product(self.pos_dim)
 
-        N, z_0, H_0, W_0 = input_tensor.get_shape().as_list()
-        # Create the appearance projection matrix
+        # Initialize weight
         ones_kernel = K.ones([1, 1, 1, 1])
-        mult_app_all = K.conv2d(ones_kernel, self.W_app, (self.strides, self.strides), padding=self.padding,
-                                data_format=self.data_format)
-        mult_app = K.reshape(mult_app_all, [self.num_capsule, self.app_dim[1], self.app_dim[1]])
 
-        # Extract appearance value
-        u_spat_t = K.conv2d(input_tensor, self.W_pos, (self.strides, self.strides),
-                            padding=self.padding, data_format=self.data_format)
+        mult_pos_all = layers.Conv2D(self.input_num_capsule * self.num_capsule * self.pos_dim[1] * self.pos_dim[1],
+                                     kernel_size=1, strides=1,
+                                     kernel_initializer=self.kernel_initializer, trainable=self.is_training,
+                                     padding=self.padding, use_bias=False, name='mult_pos')(ones_kernel)
+        mult_pos_all = tf.reshape(mult_pos_all,
+                                  [self.input_num_capsule, self.pos_dim[1] * self.pos_dim[1], self.num_capsule])
 
-        H_1 = u_spat_t.get_shape()[2]
-        W_1 = u_spat_t.get_shape()[3]
-        u_t_app = tf.transpose(u_spat_t,
-                               (0, 2, 3, 1))  # [N, t_1 * z_app * z_pos, H_1, W_1] => [N, H_1, W_1, t_1 * z_app * z_pos]
+        mult_app_all = layers.Conv2D(self.input_num_capsule * self.num_capsule * self.app_dim[1] * self.app_dim[1],
+                                     kernel_size=1, strides=1,
+                                     kernel_initializer=self.kernel_initializer, trainable=self.is_training,
+                                     padding=self.padding, use_bias=False, name='mult_app')(ones_kernel)
+        mult_app_all = tf.reshape(mult_app_all,
+                                  [self.input_num_capsule, self.app_dim[1] * self.app_dim[1], self.num_capsule])
 
-        # Initialize the pose matrix with identity
-        u_t_pos = K.zeros([N, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]], dtype='float32')
-        u_t_pos = K.reshape(u_t_pos, [N * H_1 * W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
-        identity = K.eye(self.pos_dim[1])
-        identity = identity[self.pos_dim[1] - self.pos_dim[0]:, :]
-        u_t_pos += identity
-        u_hat_t_pos = tf.reshape(u_t_pos, [N, H_1, W_1, self.num_capsule, np.product(self.pos_dim)])
+        bias_app = layers.Conv2D(self.input_num_capsule * self.num_capsule,
+                                 kernel_size=1, strides=1,
+                                 kernel_initializer=self.kernel_initializer, trainable=self.is_training,
+                                 padding=self.padding, use_bias=False, name='bias_app')(ones_kernel)
+        bias_app = tf.reshape(bias_app, [self.input_num_capsule, self.num_capsule])
 
-        # Apply the matrix multiplication to the appearance matrix
-        u_t_app = tf.reshape(u_t_app, [N, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
-        u_t_app = matmult2d(u_t_app, mult_app)
-        u_hat_t_app = tf.reshape(u_t_app, [N, H_1, W_1, self.num_capsule, np.product(self.app_dim)])
+        # For each child (input) capsule (t_0) project into all parent (output) capsule domain (t_1)
+        idx_all = 0
+        u_hat_t_list = []
 
-        # Squash the appearance matrix (Psquashing the pose won't change it)
-        v_pos = u_hat_t_pos
-        v_app = _squash(u_hat_t_app)
+        u_t_list = [K.squeeze(u_t, axis=1) for u_t in tf.split(input_tensor, self.input_num_capsule, axis=1)]
+        for u_t in u_t_list:
+            u_t = tf.reshape(u_t, [self.batch * self.channels, self.input_height, self.input_width, 1])
 
-        v = K.concatenate([v_pos, v_app], axis=-1)
-        outputs = tf.transpose(v, (
-            0, 3, 4, 1,
-            2))  # [t_1, N, H_1, W_1, z_1] => [N, t, z , H, W] #[N, H_1, W_1, t_1, z_1] => [N, t, z , H_1, W_1]
+            # Apply spatial kernel
+            if self.op == "conv":
+                u_spat_t = layers.Conv2D(self.num_capsule, kernel_size=self.kernel_size, strides=self.strides,
+                                         kernel_initializer=initializers.VarianceScaling(distribution='uniform'),
+                                         trainable=self.is_training, padding=self.padding, use_bias=False)(u_t)
+            elif self.op == "deconv":
+                u_spat_t = layers.Conv2DTranspose(self.num_capsule, kernel_size=self.kernel_size, strides=self.strides,
+                                                  kernel_initializer=initializers.VarianceScaling(
+                                                      distribution='uniform'), trainable=self.is_training,
+                                                  padding=self.padding, use_bias=False)(u_t)
+            else:
+                raise ValueError("Wrong type of operation for capsule")
+            # Some shape operation
+            H_1 = u_spat_t.get_shape()[1]
+            W_1 = u_spat_t.get_shape()[2]
+            u_spat_t = tf.reshape(u_spat_t, [self.batch, self.channels, H_1, W_1, self.num_capsule])
+            u_spat_t = tf.transpose(u_spat_t, (0, 2, 3, 4, 1))
+            u_spat_t = tf.reshape(u_spat_t, [self.batch, H_1, W_1, self.num_capsule * self.channels])
+            u_t_pos, u_t_app = tf.split(u_spat_t, [self.num_capsule * z_pos, self.num_capsule * z_app], axis=-1)
+            u_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
+            u_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
+
+            # Gather projection matrices and bias
+            mult_pos = tf.gather(mult_pos_all, idx_all, axis=0)
+            mult_pos = tf.reshape(mult_pos, [self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
+            mult_app = tf.gather(mult_app_all, idx_all, axis=0)
+            mult_app = tf.reshape(mult_app, [self.num_capsule, self.app_dim[1], self.app_dim[1]])
+            bias = tf.reshape(tf.gather(bias_app, idx_all, axis=0), (1, 1, 1, self.num_capsule, 1, 1))
+
+            u_t_app += bias
+
+            # Prepare the pose projection matrix
+
+            mult_pos = l2_normalize_dim(mult_pos, axis=-2)
+            if self.coord_add:
+                mult_pos = coordinate_addition(mult_pos, [1, H_1, W_1, self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
+
+            u_t_pos = matmult2d(u_t_pos, mult_pos)
+            u_t_app = matmult2d(u_t_app, mult_app)
+
+            # Store the result
+            u_hat_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, z_pos])
+            u_hat_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, z_app])
+            u_hat_t = K.concatenate([u_hat_t_pos, u_hat_t_app], axis=-1)
+            u_hat_t_list.append(u_hat_t)
+
+            idx_all += 1
+
+        u_hat_t_list = K.stack(u_hat_t_list, axis=-2)
+        u_hat_t_list = tf.transpose(u_hat_t_list,
+                                    [0, 5, 1, 2, 4, 3])  # [N, H, W, t_1, t_0, z]  = > [N, z, H_1, W_1, t_0, t_1]
+
+        # Routing operation
+        if self.routings > 0:
+            if self.routing_type is 'dynamic':
+                if type(self.routings) is list:
+                    self.routings = self.routings[-1]
+                c_t_list = routing2d(routing=self.routings, t_0=self.input_num_capsule, u_hat_t_list=u_hat_t_list)  # [T1][N,H,W,to]
+            elif self.routing_type is 'dual':
+                if type(self.routings) is list:
+                    self.routings = self.routings[-1]
+                c_t_list = dual_routing2d(routing=self.routings, t_0=self.input_num_capsule, u_hat_t_list=u_hat_t_list, z_app=z_app,
+                                          z_pos=z_pos)  # [T1][N,H,W,to]
+            else:
+                raise ValueError(self.routing_type + ' is an invalid routing; try dynamic or dual')
+        else:
+            self.routing_type = 'NONE'
+            c = K.ones([self.batch, H_1, W_1, self.input_num_capsule, self.num_capsule])
+            c_t_list = [K.squeeze(c_t, axis=-1) for c_t in tf.split(c, self.num_capsule, axis=-1)]
+
+        # Form each parent capsule through the weighted sum of all child capsules
+        r_t_mul_u_hat_t_list = []
+        u_hat_t_list_ = [(K.squeeze(u_hat_t, axis=-1)) for u_hat_t in tf.split(u_hat_t_list, self.num_capsule, axis=-1)]
+        for c_t, u_hat_t in zip(c_t_list, u_hat_t_list_):
+            r_t = K.expand_dims(c_t, axis=1)
+            r_t_mul_u_hat_t_list.append(K.sum(r_t * u_hat_t, axis=-1))
+
+        p = r_t_mul_u_hat_t_list
+        p = K.stack(p, axis=1)
+        p_pos, p_app = tf.split(p, [z_pos, z_app], axis=2)
+
+        # Squash the weighted sum to form the final parent capsule
+        v_pos = Psquash(p_pos, axis=2)
+        v_app = matwo_squash(p_app, axis=2)
+
+        outputs = K.concatenate([v_pos, v_app], axis=2)
 
         if self.debug_print:
-            print_primary_matwocaps_parameters(inputs=input_tensor,
-                                               outputs=outputs,
-                                               capsule_types=self.num_capsule,
-                                               app_dim=self.app_dim,
-                                               pos_dim=self.pos_dim,
-                                               kernel_size=self.kernel_size,
-                                               name=self.name,
-                                               is_training=self.trainable,
-                                               padding=self.padding,
-                                               strides=self.strides)
+            print_matwocaps_parameters(inputs=input_tensor,
+                                       outputs=outputs,
+                                       routing=self.routings,
+                                       coord_add=self.coord_add,
+                                       routing_type=self.routing_type,
+                                       capsule_types=self.num_capsule,
+                                       app_dim=self.app_dim,
+                                       pos_dim=self.pos_dim,
+                                       kernel_size=self.kernel_size,
+                                       name=self.name,
+                                       is_training=self.is_training,
+                                       padding=self.padding,
+                                       strides=self.strides)
 
         return outputs
 
     def compute_output_shape(self, input_shape):
+        # TODO promjeni
         space = input_shape[1:-2]
         new_space = []
         for i in range(len(space)):
@@ -525,12 +608,19 @@ class Caps2dMatwo(layers.Layer):
         config = {
             'kernel_size': self.kernel_size,
             'num_capsule': self.num_capsule,
+            'pos_dim': self.pos_dim,
+            'app_dim': self.app_dim,
+            'op': self.op,
+            'routing_type': self.routing_type,
+            'routings': self.routings,
             'strides': self.strides,
             'padding': self.padding,
-            'routings': self.routings,
-            'kernel_initializer': initializers.serialize(self.kernel_initializer)
+            'kernel_initializer': initializers.serialize(self.kernel_initializer),
+            'coord_add': self.coord_add,
+            'is_training': self.is_training,
+            'debug_print': self.debug_print
         }
-        base_config = super(PrimaryCaps2dMatwo, self).get_config()
+        base_config = super(Caps2dMatwo, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
 
@@ -585,16 +675,23 @@ def _squash(input_tensor):
     return (input_tensor / norm) * (norm_squared / (1 + norm_squared))
 
 
+def matwo_squash(p, axis=-1):
+    p_norm_sq = K.sum(K.square(p), axis=axis, keepdims=True)
+    p_norm = K.sqrt(p_norm_sq + 1e-9)
+    v = p_norm_sq / (1. + p_norm_sq) * p / p_norm
+    return v
+
+
 def Psquash(p, axis=-1):
-    v = p / tf.reduce_max(tf.abs(p), axis=axis, keepdims=True)
+    v = p / K.max(K.abs(p), axis=axis, keepdims=True)
     return v
 
 
 def matmult2d(a, b):
     mat = []
     for i in range(a.get_shape()[-2]):
-        mat.append(tf.multiply(tf.expand_dims(tf.gather(a, i, axis=-2), axis=-1), b))
-    c = tf.reduce_sum(tf.stack(mat, axis=-3), axis=-2)
+        mat.append(tf.multiply(K.expand_dims(tf.gather(a, i, axis=-2), axis=-1), b))
+    c = K.sum(K.stack(mat, axis=-3), axis=-2)
     return c
 
 
@@ -602,27 +699,27 @@ def routing2d(routing, t_0, u_hat_t_list):
     N, z_1, H_1, W_1, o, t_1 = u_hat_t_list.get_shape().as_list()
 
     c_t_list = []
-    b = tf.zeros([N, H_1, W_1, t_0, t_1])
-    b_t_list = [tf.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
+    b = K.zeros([N, H_1, W_1, t_0, t_1])
+    b_t_list = [K.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
 
-    u_hat_t_list_ = [tf.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
+    u_hat_t_list_ = [K.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
     for d in range(routing):
 
         r_t_mul_u_hat_t_list = []
         for b_t, u_hat_t in zip(b_t_list, u_hat_t_list_):
-            r_t = tf.nn.softmax(b_t, axis=-1)
+            r_t = actv.softmax(b_t, axis=-1)
 
             if d < routing - 1:
-                r_t = tf.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
+                r_t = K.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
                 r_t_mul_u_hat_t_list.append(
-                    tf.reduce_sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
+                    K.sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
 
             else:
                 c_t_list.append(r_t)
 
         if d < routing - 1:
             p = r_t_mul_u_hat_t_list
-            v = _squash(p)
+            v = matwo_squash(p, axis=2)
 
             b_t_list_ = []
             idx = 0
@@ -631,7 +728,7 @@ def routing2d(routing, t_0, u_hat_t_list):
                 v_t1 = tf.reshape(tf.gather(v, [idx], axis=0), [N, z_1, H_1, W_1, 1])
 
                 # Evaluate agreement
-                rout = tf.reduce_sum(v_t1 * u_hat_t)
+                rout = K.sum(v_t1 * u_hat_t)
                 b_t_list_.append(b_t + rout)
                 idx += 1
 
@@ -643,20 +740,20 @@ def dual_routing2d(routing, t_0, u_hat_t_list, z_pos, z_app):
     N, z_1, H_1, W_1, o, t_1 = u_hat_t_list.get_shape().as_list()
 
     c_t_list = []
-    b = tf.zeros([N, H_1, W_1, t_0, t_1])
-    b_t_list = [tf.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
+    b = K.zeros([N, H_1, W_1, t_0, t_1])
+    b_t_list = [K.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
 
-    u_hat_t_list_ = [tf.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
+    u_hat_t_list_ = [K.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
     for d in range(routing):
         r_t_mul_u_hat_t_list = []
 
         for b_t, u_hat_t in zip(b_t_list, u_hat_t_list_):
-            r_t = tf.nn.sigmoid(b_t)
+            r_t = actv.sigmoid(b_t)
 
             if d < routing - 1:
-                r_t = tf.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
+                r_t = K.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
                 r_t_mul_u_hat_t_list.append(
-                    tf.reduce_sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
+                    K.sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
 
             else:
                 c_t_list.append(r_t)
@@ -664,7 +761,7 @@ def dual_routing2d(routing, t_0, u_hat_t_list, z_pos, z_app):
         if d < routing - 1:
             p = r_t_mul_u_hat_t_list
             p_pos, p_app = tf.split(p, [z_pos, z_app], axis=2)
-            v_app = _squash(p_app)
+            v_app = matwo_squash(p_app, axis=2)
             v_pos = Psquash(p_pos, axis=2)
 
             b_t_list_ = []
@@ -675,7 +772,7 @@ def dual_routing2d(routing, t_0, u_hat_t_list, z_pos, z_app):
                 v_t1_app = tf.reshape(tf.gather(v_app, [idx], axis=0), [N, z_app, H_1, W_1, 1])
 
                 # Evaluate agreement
-                rout = tf.reduce_sum(u_hat_pos * v_t1_pos, axis=1) * tf.reduce_sum(u_hat_app * v_t1_app, axis=1)
+                rout = K.sum(u_hat_pos * v_t1_pos, axis=1) * K.sum(u_hat_app * v_t1_app, axis=1)
                 b_t_list_.append(b_t + rout)
                 idx += 1
 
@@ -717,3 +814,73 @@ def print_primary_matwocaps_parameters(inputs,
                 padding,
                 is_training)
     print(print_string)
+
+
+def print_matwocaps_parameters(inputs,
+                          outputs,
+                          routing,
+                          routing_type,
+                          capsule_types,
+                          app_dim,
+                          pos_dim,
+                          coord_add,
+                          kernel_size,
+                          name,
+                          is_training,
+                          padding,
+                          strides):
+
+    inputs_shape = inputs.get_shape().as_list()
+    outputs_shape = outputs.get_shape().as_list()
+    print_string = '{}: ' \
+                   'in={} ' \
+                   'out={} ' \
+                   'rout={} ' \
+                   'rout_type={} ' \
+                   'caps={} '\
+                   'app_dim={} '\
+                   'pos_dim={} '\
+                   'coord_add={} '\
+                   'ks={} ' \
+                   's={} '\
+                   'pad={} ' \
+                   'train={} ' \
+        .format(name,
+                inputs_shape,
+                outputs_shape,
+                routing,
+                routing_type,
+                capsule_types,
+                app_dim,
+                pos_dim,
+                coord_add,
+                kernel_size,
+                strides,
+                padding,
+                is_training)
+    print(print_string)
+
+
+def mesh2d(shape):
+    x, y = np.meshgrid(range(shape[2]), range(shape[1]))
+    return y.flatten(), x.flatten()
+
+
+def coordinate_addition(b, shape):
+    y, x = mesh2d(shape)
+
+    coord_add = np.zeros((shape[1] * shape[2], 1, shape[-2], shape[-1]), dtype=np.float32)
+    coord_add[:, 0, -1, 0] += x
+    coord_add[:, 0, -1, 1] += y
+    coord_add[:, 0, -1, 0] /= shape[2].value
+    coord_add[:, 0, -1, 1] /= shape[1].value
+
+    b += (coord_add)
+    b = tf.reshape(b, shape)
+    return b
+
+
+def l2_normalize_dim(b, axis):
+    denom = K.expand_dims(K.sqrt(K.sum(K.square(b), axis=axis)), axis=axis)
+    b /= denom
+    return b
