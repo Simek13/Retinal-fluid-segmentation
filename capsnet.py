@@ -14,102 +14,97 @@ import tensorflow as tf
 
 K.set_image_data_format('channels_last')
 
-from capsule_layers import ConvCapsuleLayer, DeconvCapsuleLayer, PrimaryCaps2dMatwo, Caps2dMatwo, Mask, Length
+from capsule_layers import ConvCapsuleLayer, DeconvCapsuleLayer, PrimaryCaps2dMatwo, Caps2dMatwo, Mask, Length, \
+    caps_duallength, caps_length
 
 
-def Matwo_CapsNet(input, num_labels, is_training, routing_type, routing=3, data_format='channels_last'):
+def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dual', routing=3, data_format='channels_last'):
     padding = 'SAME'
     coord_add = True
-    routing = 3
     pos_dim = [4, 4]
     app_dim = [5, 5]
     level_caps = [5, 5, 6, 7]
 
-    prediction = Caps(input=input, num_labels=num_labels, is_training=is_training, routing_type=routing_type,
-                      routing=routing, pos_dim=pos_dim, app_dim=app_dim, coord_add=coord_add, level_caps=level_caps,
-                      padding=padding, data_format=data_format)
-    return prediction
-
-
-def Caps(input, num_labels, is_training, routing_type, routing, pos_dim, app_dim, coord_add, level_caps, padding,
-         data_format):
-    input_dim = len(input.get_shape())
+    x = layers.Input(shape=input_shape)
+    input_dim = len(input_shape)
     if input_dim == 5:
-        input = K.squeeze(input, axis=1)
-        input = tf.transpose(input, [1, 0, 2, 3])
+        x = K.squeeze(x, axis=1)
+        x = tf.transpose(x, [1, 0, 2, 3])
 
     x = PrimaryCaps2dMatwo(pos_dim=pos_dim, app_dim=app_dim, num_capsule=int(level_caps[0]), kernel_size=5,
-                             strides=1, name='primary_caps', padding=padding, op="conv", is_training=is_training,
-                             data_format=data_format)(input)
+                           strides=1, name='primary_caps', padding=padding, op="conv", is_training=is_training,
+                           data_format=data_format)(x)
 
     x = Caps2dMatwo(routings=1, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[1]), kernel_size=5, name='caps_1df_cd1', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[1]), kernel_size=5, name='caps_1df_cd1', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
     skip1 = x
     # 1/2
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[1]), kernel_size=5, name='caps_12_cd1', coord_add=coord_add,
-                     padding=padding, strides=2, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[1]), kernel_size=5, name='caps_12_cd1', coord_add=coord_add,
+                    padding=padding, strides=2, op="conv", is_training=is_training)(x)
 
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[1]), kernel_size=5, name='caps_12_cd2', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[1]), kernel_size=5, name='caps_12_cd2', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
     skip2 = x
 
     # 1/4
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[2]), kernel_size=5, name='caps_14_cd1', coord_add=coord_add,
-                     padding=padding, strides=2, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[2]), kernel_size=5, name='caps_14_cd1', coord_add=coord_add,
+                    padding=padding, strides=2, op="conv", is_training=is_training)(x)
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[2]), kernel_size=5, name='caps_14_cd2', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[2]), kernel_size=5, name='caps_14_cd2', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
     skip3 = x
 
     # 1/8
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[3]), kernel_size=5, name='caps_18_cd1', coord_add=coord_add,
-                     padding=padding, strides=2, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[3]), kernel_size=5, name='caps_18_cd1', coord_add=coord_add,
+                    padding=padding, strides=2, op="conv", is_training=is_training)(x)
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[3]), kernel_size=5, name='caps_18_cd2', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[3]), kernel_size=5, name='caps_18_cd2', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[3]), kernel_size=5, name='caps_18_cd3', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[3]), kernel_size=5, name='caps_18_cd3', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
 
     # 1/4
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[3]), kernel_size=4, name='caps_14_du1', coord_add=coord_add,
-                     padding=padding, strides=2, op="deconv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[3]), kernel_size=4, name='caps_14_du1', coord_add=coord_add,
+                    padding=padding, strides=2, op="deconv", is_training=is_training)(x)
     x = K.concatenate([x, skip3], axis=1)
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[3]), kernel_size=5, name='caps_14_cu2', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[3]), kernel_size=5, name='caps_14_cu2', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
 
     # 1/2
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[2]), kernel_size=4, name='caps_12_du1', coord_add=coord_add,
-                     padding=padding, strides=2, op="deconv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[2]), kernel_size=4, name='caps_12_du1', coord_add=coord_add,
+                    padding=padding, strides=2, op="deconv", is_training=is_training)(x)
     x = K.concatenate([x, skip2], axis=1)
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[2]), kernel_size=5, name='caps_12_cu2', coord_add=coord_add,
-                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[2]), kernel_size=5, name='caps_12_cu2', coord_add=coord_add,
+                    padding=padding, strides=1, op="conv", is_training=is_training)(x)
 
     # 1
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=int(level_caps[2]), kernel_size=4, name='caps_1_du1', coord_add=coord_add,
-                     padding=padding, strides=2, op="deconv", is_training=is_training)(x)
+                    num_capsule=int(level_caps[2]), kernel_size=4, name='caps_1_du1', coord_add=coord_add,
+                    padding=padding, strides=2, op="deconv", is_training=is_training)(x)
     x = K.concatenate([x, skip1], axis=1)
 
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                     num_capsule=num_labels, kernel_size=1, name='caps_1_c2', coord_add=coord_add, padding=padding,
-                     strides=1, op="conv", is_training=is_training)(x)
+                    num_capsule=num_labels, kernel_size=1, name='caps_1_c2', coord_add=coord_add, padding=padding,
+                    strides=1, op="conv", is_training=is_training)(x)
 
     if routing_type is 'dual':
         prediction = caps_duallength(x, pos_dim=pos_dim, app_dim=app_dim)
     else:
         prediction = caps_length(x)
 
-    return prediction
+    model = models.Model(inputs=x, outputs=prediction)
+
+    return model
 
 
 def CapsNetR3(input_shape, n_class=4):
@@ -240,7 +235,8 @@ def CapsNetR3(input_shape, n_class=4):
     masked_by_y_dec3 = layers.Lambda(lambda x: x[:, :, :, 3], name='recon3')(masked_by_y_dec)
 
     # Models for training and evaluation (prediction)
-    train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y_dec0, masked_by_y_dec1, masked_by_y_dec2, masked_by_y_dec3])
+    train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y_dec0, masked_by_y_dec1, masked_by_y_dec2,
+                                                       masked_by_y_dec3])
     # train_model = models.Model(inputs=x, outputs=out_seg)
     # eval_model = models.Model(inputs=x, outputs=[out_seg, shared_decoder(masked)])
     eval_model = models.Model(inputs=x, outputs=out_seg)

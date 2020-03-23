@@ -14,7 +14,7 @@ from __future__ import print_function
 
 import threading
 from os.path import join, basename, splitext
-from os import mkdir, listdir, getcwd
+from os import mkdir, listdir
 from glob import glob
 import csv
 from sklearn.model_selection import KFold
@@ -311,11 +311,10 @@ def threadsafe_generator(f):
 
 
 @threadsafe_generator
-def generate_train_batches(root_path, train_list, net_input_shape, net, batchSize=1, numSlices=1, subSampAmt=-1,
-                           stride=1, downSampAmt=1, shuff=1, aug_data=1):
+def generate_train_batches(root_path, train_list, net_input_shape, net, batch_size=1, shuff=True, aug_data=False):
     # Create placeholders for training
-    img_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.float32)
-    mask_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.uint8)
+    img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
+    mask_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.uint8)
 
     while True:
         if shuff:
@@ -349,13 +348,13 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batchSiz
             mask_batch[count, :, :, 0] = train_mask[:, :]
 
             count += 1
-            if count % batchSize == 0:
+            if count % batch_size == 0:
                 count = 0
                 if aug_data:
                     img_batch, mask_batch = augmentImages(img_batch, mask_batch)
 
                 mask = mask_batch.squeeze(axis=-1)
-                mask_batch_hot = np.zeros((batchSize, train_mask.shape[0], train_mask.shape[1], 4))
+                mask_batch_hot = np.zeros((batch_size, train_mask.shape[0], train_mask.shape[1], 4))
                 mask_batch_hot[mask == 0, 0] = 1
                 mask_batch_hot[mask == 85, 1] = 1
                 mask_batch_hot[mask == 170, 2] = 1
@@ -390,11 +389,10 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batchSiz
 
 
 @threadsafe_generator
-def generate_val_batches(root_path, val_list, net_input_shape, net, batchSize=1, numSlices=1, subSampAmt=-1,
-                         stride=1, downSampAmt=1, shuff=1):
+def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1, shuff=1):
     # Create placeholders for validation
-    img_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.float32)
-    mask_batch = np.zeros((np.concatenate(((batchSize,), net_input_shape))), dtype=np.uint8)
+    img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
+    mask_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.uint8)
 
     while True:
         if shuff:
@@ -421,11 +419,11 @@ def generate_val_batches(root_path, val_list, net_input_shape, net, batchSize=1,
             mask_batch[count, :, :, 0] = val_mask[:, :]
 
             count += 1
-            if count % batchSize == 0:
+            if count % batch_size == 0:
                 count = 0
 
                 mask = mask_batch.squeeze(axis=-1)
-                mask_batch_hot = np.zeros((batchSize, val_mask.shape[0], val_mask.shape[1], 4))
+                mask_batch_hot = np.zeros((batch_size, val_mask.shape[0], val_mask.shape[1], 4))
                 mask_batch_hot[mask == 0, 0] = 1
                 mask_batch_hot[mask == 85, 1] = 1
                 mask_batch_hot[mask == 170, 2] = 1

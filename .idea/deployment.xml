@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="spavlic@161.53.64.237:5555" exclude=".svn;.cvs;.idea;.DS_Store;.git;.hg;*.hprof;*.pyc;imgs;">
+  <component name="PublishConfigData" autoUpload="Always" serverName="root@161.53.64.237:6555" exclude=".svn;.cvs;.idea;.DS_Store;.git;.hg;*.hprof;*.pyc;imgs;">
     <serverData>
-      <paths name="spavlic@161.53.64.237:5555">
+      <paths name="root@161.53.64.237:6555">
         <serverdata>
           <mappings>
-            <mapping deploy="/tmp/pycharm_project_193" local="$PROJECT_DIR$" />
+            <mapping deploy="/workspace/retinal_fluid_segmentation" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

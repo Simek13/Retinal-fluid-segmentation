@@ -32,6 +32,10 @@ def create_model(args, input_shape):
             from capsnet import CapsNetBasic
             model_list = CapsNetBasic(input_shape)
             return model_list
+        elif args.net == 'matwo':
+            from capsnet import Matwo_CapsNet
+            model = Matwo_CapsNet(input_shape)
+            return [model]
         else:
             raise Exception('Unknown network type specified: {}'.format(args.net))
     # If using multiple GPUs
@@ -57,5 +61,9 @@ def create_model(args, input_shape):
                 from capsnet import CapsNetBasic
                 model_list = CapsNetBasic(input_shape)
                 return model_list
+            elif args.net == 'matwo':
+                from capsnet import Matwo_CapsNet
+                model = Matwo_CapsNet(input_shape)
+                return [model]
             else:
                 raise Exception('Unknown network type specified: {}'.format(args.net))

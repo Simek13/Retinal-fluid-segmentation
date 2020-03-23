@@ -104,6 +104,8 @@ def compile_model(args, net_input_shape, uncomp_model):
     if args.net.find('caps') != -1:
         # metrics = {'out_seg': 'categorical_accuracy'}
         metrics = {'out_seg': weighted_dice_coef(S_PRESENCE)}
+    elif args.net == 'matwo':
+        metrics = ['categorical_accuracy']
     else:
         metrics = [dice_hard]
 
@@ -180,7 +182,7 @@ def train(args, train_list, val_list, u_model, net_input_shape):
         max_queue_size=40, workers=4, use_multiprocessing=False,
         steps_per_epoch=1059,
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
-                                             batchSize=args.batch_size, numSlices=args.slices, subSampAmt=0,
+                                             batch_size=args.batch_size, numSlices=args.slices, subSampAmt=0,
                                              stride=20, shuff=args.shuffle_data),
         validation_steps=118,  # Set validation stride larger to see more of the data.
         epochs=10,

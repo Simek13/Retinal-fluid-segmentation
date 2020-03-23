@@ -1,2 +1,5 @@
 imgs/
-.idea/
+datasets/JSRT/All247images
+datasets/JSRT/scratch
+.*
+!/.gitignore

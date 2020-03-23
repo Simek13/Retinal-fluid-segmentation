@@ -40,9 +40,8 @@ def main(args):
     train_list, val_list = train_test_split(data, test_size=0.1)
 
     # Get image properties from first image. Assume they are all the same.
-    img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'imgs', data[0][0]))).shape
+    img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'images', data[0][0]))).shape
     net_input_shape = (int(img_shape[0] / 2), int(img_shape[1] / 2), 1)
-    # net_input_shape = (img_shape[0], img_shape[1], 1)
 
     # Create the model for training/testing/manipulation
     model_list = create_model(args=args, input_shape=net_input_shape)
@@ -112,7 +111,7 @@ if __name__ == '__main__':
     parser.add_argument('--split_num', type=int, default=0,
                         help='Which training split to train/test on.')
     parser.add_argument('--net', type=str.lower, default='segcapsr3',
-                        choices=['segcapsr3', 'segcapsr1', 'segcapsbasic', 'unet', 'tiramisu'],
+                        choices=['segcapsr3', 'segcapsr1', 'segcapsbasic', 'unet', 'tiramisu', 'matwo'],
                         help='Choose your network.')
     parser.add_argument('--train', type=int, default=1, choices=[0, 1],
                         help='Set to 1 to enable training.')

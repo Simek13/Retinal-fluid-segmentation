@@ -388,8 +388,7 @@ class PrimaryCaps2dMatwo(layers.Layer):
         return outputs
 
     def compute_output_shape(self, input_shape):
-        # TODO promjeni
-        space = input_shape[1:-2]
+        space = input_shape[2:]
         new_space = []
         for i in range(len(space)):
             new_dim = conv_output_length(
@@ -400,7 +399,8 @@ class PrimaryCaps2dMatwo(layers.Layer):
                 dilation=1)
             new_space.append(new_dim)
 
-        return (input_shape[0],) + tuple(new_space) + (self.num_capsule, self.num_atoms)
+        return (input_shape[0],) + (self.num_capsule, np.product(self.app_dim) + np.product(self.pos_dim)) + \
+               tuple(new_space)
 
     def get_config(self):
         config = {
@@ -455,6 +455,8 @@ class Caps2dMatwo(layers.Layer):
         z_pos = np.product(self.pos_dim)
 
         # Initialize weight
+        # Learning transformation matrices for pose and appearance and appearance bias
+        # There are t0*t1 transformation matrices
         ones_kernel = K.ones([1, 1, 1, 1])
 
         mult_pos_all = layers.Conv2D(self.input_num_capsule * self.num_capsule * self.pos_dim[1] * self.pos_dim[1],
@@ -481,11 +483,14 @@ class Caps2dMatwo(layers.Layer):
         idx_all = 0
         u_hat_t_list = []
 
+        # Split input_tensor by capsule types
         u_t_list = [K.squeeze(u_t, axis=1) for u_t in tf.split(input_tensor, self.input_num_capsule, axis=1)]
         for u_t in u_t_list:
             u_t = tf.reshape(u_t, [self.batch * self.channels, self.input_height, self.input_width, 1])
 
             # Apply spatial kernel
+            # Incorporating local neighborhood information by learning a convolution kernel of size k x k for the pose
+            # and appearance matrices Pi and Ai
             if self.op == "conv":
                 u_spat_t = layers.Conv2D(self.num_capsule, kernel_size=self.kernel_size, strides=self.strides,
                                          kernel_initializer=initializers.VarianceScaling(distribution='uniform'),
@@ -503,11 +508,14 @@ class Caps2dMatwo(layers.Layer):
             u_spat_t = tf.reshape(u_spat_t, [self.batch, self.channels, H_1, W_1, self.num_capsule])
             u_spat_t = tf.transpose(u_spat_t, (0, 2, 3, 4, 1))
             u_spat_t = tf.reshape(u_spat_t, [self.batch, H_1, W_1, self.num_capsule * self.channels])
+
+            # Split convolution output of input_tensor to Pose and Appearance matrices
             u_t_pos, u_t_app = tf.split(u_spat_t, [self.num_capsule * z_pos, self.num_capsule * z_app], axis=-1)
             u_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
             u_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
 
             # Gather projection matrices and bias
+            # Take appropriate capsule type
             mult_pos = tf.gather(mult_pos_all, idx_all, axis=0)
             mult_pos = tf.reshape(mult_pos, [self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
             mult_app = tf.gather(mult_app_all, idx_all, axis=0)
@@ -518,9 +526,12 @@ class Caps2dMatwo(layers.Layer):
 
             # Prepare the pose projection matrix
 
+            # Why does he normalize second dimension?
             mult_pos = l2_normalize_dim(mult_pos, axis=-2)
             if self.coord_add:
-                mult_pos = coordinate_addition(mult_pos, [1, H_1, W_1, self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
+                # Zašto dodaje na prvu dimenziju normalizirane koordinate?
+                mult_pos = coordinate_addition(mult_pos,
+                                               [1, H_1, W_1, self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
 
             u_t_pos = matmult2d(u_t_pos, mult_pos)
             u_t_app = matmult2d(u_t_app, mult_app)
@@ -542,11 +553,13 @@ class Caps2dMatwo(layers.Layer):
             if self.routing_type is 'dynamic':
                 if type(self.routings) is list:
                     self.routings = self.routings[-1]
-                c_t_list = routing2d(routing=self.routings, t_0=self.input_num_capsule, u_hat_t_list=u_hat_t_list)  # [T1][N,H,W,to]
+                c_t_list = routing2d(routing=self.routings, t_0=self.input_num_capsule,
+                                     u_hat_t_list=u_hat_t_list)  # [T1][N,H,W,to]
             elif self.routing_type is 'dual':
                 if type(self.routings) is list:
                     self.routings = self.routings[-1]
-                c_t_list = dual_routing2d(routing=self.routings, t_0=self.input_num_capsule, u_hat_t_list=u_hat_t_list, z_app=z_app,
+                c_t_list = dual_routing2d(routing=self.routings, t_0=self.input_num_capsule, u_hat_t_list=u_hat_t_list,
+                                          z_app=z_app,
                                           z_pos=z_pos)  # [T1][N,H,W,to]
             else:
                 raise ValueError(self.routing_type + ' is an invalid routing; try dynamic or dual')
@@ -590,19 +603,28 @@ class Caps2dMatwo(layers.Layer):
         return outputs
 
     def compute_output_shape(self, input_shape):
-        # TODO promjeni
-        space = input_shape[1:-2]
-        new_space = []
-        for i in range(len(space)):
-            new_dim = conv_output_length(
-                space[i],
-                self.kernel_size,
-                padding=self.padding,
-                stride=self.strides,
-                dilation=1)
-            new_space.append(new_dim)
+        space = input_shape[3:]
+        if self.op == "conv":
+            new_space = []
+            for i in range(len(space)):
+                new_dim = conv_output_length(
+                    space[i],
+                    self.kernel_size,
+                    padding=self.padding,
+                    stride=self.strides,
+                    dilation=1)
+                new_space.append(new_dim)
+        elif self.op == 'deconv':
+            new_space = []
+            for i in range(len(space)):
+                new_dim = deconv_length(space[i], self.strides, self.kernel_size, self.padding,
+                                        output_padding=None)
+                new_space.append(new_dim)
+        else:
+            raise ValueError("Wrong type of operation for capsule")
 
-        return (input_shape[0],) + tuple(new_space) + (self.num_capsule, self.num_atoms)
+        return (input_shape[0],) + (self.num_capsule, np.product(self.app_dim) + np.product(self.pos_dim)) + \
+               tuple(new_space)
 
     def get_config(self):
         config = {
@@ -817,19 +839,18 @@ def print_primary_matwocaps_parameters(inputs,
 
 
 def print_matwocaps_parameters(inputs,
-                          outputs,
-                          routing,
-                          routing_type,
-                          capsule_types,
-                          app_dim,
-                          pos_dim,
-                          coord_add,
-                          kernel_size,
-                          name,
-                          is_training,
-                          padding,
-                          strides):
-
+                               outputs,
+                               routing,
+                               routing_type,
+                               capsule_types,
+                               app_dim,
+                               pos_dim,
+                               coord_add,
+                               kernel_size,
+                               name,
+                               is_training,
+                               padding,
+                               strides):
     inputs_shape = inputs.get_shape().as_list()
     outputs_shape = outputs.get_shape().as_list()
     print_string = '{}: ' \
@@ -837,12 +858,12 @@ def print_matwocaps_parameters(inputs,
                    'out={} ' \
                    'rout={} ' \
                    'rout_type={} ' \
-                   'caps={} '\
-                   'app_dim={} '\
-                   'pos_dim={} '\
-                   'coord_add={} '\
+                   'caps={} ' \
+                   'app_dim={} ' \
+                   'pos_dim={} ' \
+                   'coord_add={} ' \
                    'ks={} ' \
-                   's={} '\
+                   's={} ' \
                    'pad={} ' \
                    'train={} ' \
         .format(name,
@@ -884,3 +905,15 @@ def l2_normalize_dim(b, axis):
     denom = K.expand_dims(K.sqrt(K.sum(K.square(b), axis=axis)), axis=axis)
     b /= denom
     return b
+
+
+def caps_length(x, axis=2):
+    pred = K.sqrt(K.sum(K.square(x), axis=axis, keepdims=True))
+    pred = K.squeeze(pred, axis=axis)
+    return pred
+
+
+def caps_duallength(x, pos_dim, app_dim, axis=2):
+    x_mat, x_mat2 = tf.split(x, [np.product(pos_dim), np.product(app_dim)], axis=axis)
+    pred = caps_length(x_mat, axis=axis) * caps_length(x_mat2, axis=axis)
+    return pred
