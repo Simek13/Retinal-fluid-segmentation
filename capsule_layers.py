@@ -42,6 +42,27 @@ class Length(layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+class DualLength(layers.Layer):
+    def __init__(self, pos_dim, app_dim, **kwargs):
+        super(DualLength, self).__init__(**kwargs)
+        self.pos_dim = pos_dim
+        self.app_dim = app_dim
+
+    def call(self, inputs, **kwargs):
+        x = tf.transpose(inputs, (0, 3, 4, 1, 2))
+        x_mat, x_mat2 = tf.split(x, [np.product(self.pos_dim), np.product(self.app_dim)], axis=-1)
+        pred = tf.norm(x_mat, axis=-1) * tf.norm(x_mat2, axis=-1)
+        return softmax(pred)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0],) + input_shape[3:] + (input_shape[1],)
+
+    def get_config(self):
+        config = {'pos_dim': self.pos_dim, 'app_dim': self.app_dim}
+        base_config = super(DualLength, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
 class Mask(layers.Layer):
     def __init__(self, resize_masks=False, **kwargs):
         super(Mask, self).__init__(**kwargs)
@@ -53,7 +74,7 @@ class Mask(layers.Layer):
             input, mask = inputs
             _, hei, wid, _, _ = input.get_shape()
             if self.resize_masks:
-                mask = tf.image.resize_bicubic(mask, (hei.value, wid.value))
+                mask = tf.image.resize_bicubic(mask, (hei, wid))
             mask = K.expand_dims(mask, -1)
             if input.get_shape().ndims == 3:
                 masked = K.batch_flatten(mask * input)
@@ -339,17 +360,15 @@ class PrimaryCaps2dMatwo(layers.Layer):
         mult_app = K.reshape(mult_app_all, [self.num_capsule, self.app_dim[1], self.app_dim[1]])
 
         # Extract appearance value
-        u_spat_t = layers.Conv2D(self.num_capsule * self.app_dim[0] * self.app_dim[
+        u_t_app = layers.Conv2D(self.num_capsule * self.app_dim[0] * self.app_dim[
             1], kernel_size=self.kernel_size, strides=self.strides,
                                  kernel_initializer=self.kernel_initializer,
                                  activation=self.activation, padding=self.padding, use_bias=True,
                                  data_format=self.data_format, trainable=self.is_training,
                                  name='spatial_k')(input_tensor)
 
-        H_1 = u_spat_t.get_shape()[2]
-        W_1 = u_spat_t.get_shape()[3]
-        u_t_app = tf.transpose(u_spat_t,
-                               (0, 2, 3, 1))  # [N, t_1 * z_app * z_pos, H_1, W_1] => [N, H_1, W_1, t_1 * z_app * z_pos]
+        H_1 = u_t_app.get_shape()[1]
+        W_1 = u_t_app.get_shape()[2]
 
         # Initialize the pose matrix with identity
         u_t_pos = K.zeros([self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]], dtype='float32')
@@ -388,7 +407,7 @@ class PrimaryCaps2dMatwo(layers.Layer):
         return outputs
 
     def compute_output_shape(self, input_shape):
-        space = input_shape[2:]
+        space = input_shape[1:3]
         new_space = []
         for i in range(len(space)):
             new_dim = conv_output_length(
@@ -893,8 +912,8 @@ def coordinate_addition(b, shape):
     coord_add = np.zeros((shape[1] * shape[2], 1, shape[-2], shape[-1]), dtype=np.float32)
     coord_add[:, 0, -1, 0] += x
     coord_add[:, 0, -1, 1] += y
-    coord_add[:, 0, -1, 0] /= shape[2].value
-    coord_add[:, 0, -1, 1] /= shape[1].value
+    coord_add[:, 0, -1, 0] /= shape[2]
+    coord_add[:, 0, -1, 1] /= shape[1]
 
     b += (coord_add)
     b = tf.reshape(b, shape)
@@ -905,15 +924,3 @@ def l2_normalize_dim(b, axis):
     denom = K.expand_dims(K.sqrt(K.sum(K.square(b), axis=axis)), axis=axis)
     b /= denom
     return b
-
-
-def caps_length(x, axis=2):
-    pred = K.sqrt(K.sum(K.square(x), axis=axis, keepdims=True))
-    pred = K.squeeze(pred, axis=axis)
-    return pred
-
-
-def caps_duallength(x, pos_dim, app_dim, axis=2):
-    x_mat, x_mat2 = tf.split(x, [np.product(pos_dim), np.product(app_dim)], axis=axis)
-    pred = caps_length(x_mat, axis=axis) * caps_length(x_mat2, axis=axis)
-    return pred

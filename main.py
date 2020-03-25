@@ -21,6 +21,8 @@ import SimpleITK as sitk
 from time import gmtime, strftime
 from sklearn.model_selection import KFold, train_test_split
 
+from datasets.dataset import Dataset
+
 time = strftime("%Y-%m-%d-%H:%M:%S", gmtime())
 
 from keras.utils import print_summary
@@ -36,7 +38,8 @@ def main(args):
     experiment = Experiment(project_name="general", workspace="simek13")
 
     # Load the training, validation, and testing data
-    data = load_data(args.data_root_dir)
+    dataset = Dataset(args.data_root_dir, '.png')
+    data = dataset.load_data()
     train_list, val_list = train_test_split(data, test_size=0.1)
 
     # Get image properties from first image. Assume they are all the same.

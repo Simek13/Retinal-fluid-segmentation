@@ -34,6 +34,7 @@ def create_model(args, input_shape):
             return model_list
         elif args.net == 'matwo':
             from capsnet import Matwo_CapsNet
+            input_shape = (args.batch_size,) + input_shape
             model = Matwo_CapsNet(input_shape)
             return [model]
         else:
@@ -63,6 +64,7 @@ def create_model(args, input_shape):
                 return model_list
             elif args.net == 'matwo':
                 from capsnet import Matwo_CapsNet
+                input_shape = (args.batch_size,) + input_shape
                 model = Matwo_CapsNet(input_shape)
                 return [model]
             else:

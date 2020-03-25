@@ -10,30 +10,26 @@ This file contains the network definitions for the various capsule network archi
 
 from keras import layers, models
 from keras import backend as K
-import tensorflow as tf
 
 K.set_image_data_format('channels_last')
 
 from capsule_layers import ConvCapsuleLayer, DeconvCapsuleLayer, PrimaryCaps2dMatwo, Caps2dMatwo, Mask, Length, \
-    caps_duallength, caps_length
+    DualLength
 
 
-def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dual', routing=3, data_format='channels_last'):
-    padding = 'SAME'
+def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dual', routing=3,
+                  data_format='channels_last'):
+    padding = 'same'
     coord_add = True
     pos_dim = [4, 4]
     app_dim = [5, 5]
     level_caps = [5, 5, 6, 7]
 
-    x = layers.Input(shape=input_shape)
-    input_dim = len(input_shape)
-    if input_dim == 5:
-        x = K.squeeze(x, axis=1)
-        x = tf.transpose(x, [1, 0, 2, 3])
+    input_tensor = layers.Input(batch_shape=input_shape)
 
     x = PrimaryCaps2dMatwo(pos_dim=pos_dim, app_dim=app_dim, num_capsule=int(level_caps[0]), kernel_size=5,
                            strides=1, name='primary_caps', padding=padding, op="conv", is_training=is_training,
-                           data_format=data_format)(x)
+                           data_format=data_format)(input_tensor)
 
     x = Caps2dMatwo(routings=1, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=int(level_caps[1]), kernel_size=5, name='caps_1df_cd1', coord_add=coord_add,
@@ -73,7 +69,7 @@ def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dua
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=int(level_caps[3]), kernel_size=4, name='caps_14_du1', coord_add=coord_add,
                     padding=padding, strides=2, op="deconv", is_training=is_training)(x)
-    x = K.concatenate([x, skip3], axis=1)
+    x = layers.Concatenate(axis=1, name='up_1')([x, skip3])
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=int(level_caps[3]), kernel_size=5, name='caps_14_cu2', coord_add=coord_add,
                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
@@ -82,7 +78,7 @@ def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dua
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=int(level_caps[2]), kernel_size=4, name='caps_12_du1', coord_add=coord_add,
                     padding=padding, strides=2, op="deconv", is_training=is_training)(x)
-    x = K.concatenate([x, skip2], axis=1)
+    x = layers.Concatenate(axis=1, name='up_2')([x, skip2])
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=int(level_caps[2]), kernel_size=5, name='caps_12_cu2', coord_add=coord_add,
                     padding=padding, strides=1, op="conv", is_training=is_training)(x)
@@ -91,18 +87,15 @@ def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dua
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=int(level_caps[2]), kernel_size=4, name='caps_1_du1', coord_add=coord_add,
                     padding=padding, strides=2, op="deconv", is_training=is_training)(x)
-    x = K.concatenate([x, skip1], axis=1)
+    x = layers.Concatenate(axis=1, name='up_3')([x, skip1])
 
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
                     num_capsule=num_labels, kernel_size=1, name='caps_1_c2', coord_add=coord_add, padding=padding,
                     strides=1, op="conv", is_training=is_training)(x)
 
-    if routing_type is 'dual':
-        prediction = caps_duallength(x, pos_dim=pos_dim, app_dim=app_dim)
-    else:
-        prediction = caps_length(x)
+    prediction = DualLength(pos_dim=pos_dim, app_dim=app_dim)(x)
 
-    model = models.Model(inputs=x, outputs=prediction)
+    model = models.Model(inputs=input_tensor, outputs=prediction)
 
     return model
 
