@@ -325,7 +325,7 @@ class DeconvCapsuleLayer(layers.Layer):
 
 
 class PrimaryCaps2dMatwo(layers.Layer):
-    def __init__(self, kernel_size, num_capsule, pos_dim, app_dim, op, strides=1, padding='same',
+    def __init__(self, kernel_size, num_capsule, pos_dim, app_dim, strides=1, padding='same',
                  kernel_initializer='truncated_normal', activation='relu', data_format="channels_last",
                  is_training=False, debug_print=True, **kwargs):
         super(PrimaryCaps2dMatwo, self).__init__(**kwargs)
@@ -333,7 +333,6 @@ class PrimaryCaps2dMatwo(layers.Layer):
         self.num_capsule = num_capsule
         self.pos_dim = pos_dim
         self.app_dim = app_dim
-        self.op = op
         self.strides = strides
         self.padding = padding
         self.kernel_initializer = initializers.get(kernel_initializer)
@@ -427,7 +426,6 @@ class PrimaryCaps2dMatwo(layers.Layer):
             'num_capsule': self.num_capsule,
             'pos_dim': self.pos_dim,
             'app_dim': self.app_dim,
-            'op': self.op,
             'strides': self.strides,
             'padding': self.padding,
             'kernel_initializer': initializers.serialize(self.kernel_initializer),
@@ -441,7 +439,7 @@ class PrimaryCaps2dMatwo(layers.Layer):
 
 
 class Caps2dMatwo(layers.Layer):
-    def __init__(self, kernel_size, num_capsule, pos_dim, app_dim, op, routing_type, routings, strides, padding='same',
+    def __init__(self, kernel_size, num_capsule, pos_dim, app_dim, routing_type, routings, strides, op='conv', padding='same',
                  kernel_initializer='truncated_normal', coord_add=True, is_training=False, debug_print=True, **kwargs):
         super(Caps2dMatwo, self).__init__(**kwargs)
         self.kernel_size = kernel_size

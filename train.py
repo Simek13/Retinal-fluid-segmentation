@@ -87,7 +87,7 @@ def get_callbacks(arguments):
 
     csv_logger = CSVLogger(join(arguments.log_dir, arguments.output_name + '_log_' + arguments.time + '.csv'),
                            separator=',')
-    tb = TensorBoard(arguments.tf_log_dir, batch_size=arguments.batch_size, histogram_freq=0)
+    tb = TensorBoard(arguments.tf_log_dir, histogram_freq=0)
     model_checkpoint = ModelCheckpoint(
         join(arguments.check_dir, arguments.output_name + '_model_' + arguments.time + '.hdf5'),
         monitor=monitor_name, save_best_only=True, save_weights_only=True,
@@ -179,11 +179,11 @@ def train(args, train_list, val_list, u_model, net_input_shape):
         generate_train_batches(args.data_root_dir, train_list, net_input_shape, net=args.net,
                                batch_size=args.batch_size, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
-        steps_per_epoch=1059,
+        steps_per_epoch=221,
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batch_size=args.batch_size, shuff=args.shuffle_data),
-        validation_steps=118,  # Set validation stride larger to see more of the data.
-        epochs=10,
+        validation_steps=25,  # Set validation stride larger to see more of the data.
+        epochs=20,
         callbacks=callbacks,
         verbose=1)
 

@@ -27,7 +27,6 @@ time = strftime("%Y-%m-%d-%H:%M:%S", gmtime())
 
 from keras.utils import print_summary
 
-from load_3D_data import load_data
 from model_helper import create_model
 
 
@@ -44,7 +43,7 @@ def main(args):
 
     # Get image properties from first image. Assume they are all the same.
     img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'images', data[0][0]))).shape
-    net_input_shape = (int(img_shape[0] / 2), int(img_shape[1] / 2), 1)
+    net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 8), img_shape[2])
 
     # Create the model for training/testing/manipulation
     model_list = create_model(args=args, input_shape=net_input_shape)

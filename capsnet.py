@@ -28,7 +28,7 @@ def Matwo_CapsNet(input_shape, num_labels=6, is_training=True, routing_type='dua
     input_tensor = layers.Input(batch_shape=input_shape)
 
     x = PrimaryCaps2dMatwo(pos_dim=pos_dim, app_dim=app_dim, num_capsule=int(level_caps[0]), kernel_size=5,
-                           strides=1, name='primary_caps', padding=padding, op="conv", is_training=is_training,
+                           strides=1, name='primary_caps', padding=padding, is_training=is_training,
                            data_format=data_format)(input_tensor)
 
     x = Caps2dMatwo(routings=1, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,

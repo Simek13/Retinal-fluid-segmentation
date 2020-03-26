@@ -19,7 +19,7 @@ from glob import glob
 import csv
 from sklearn.model_selection import KFold
 import numpy as np
-from numpy.random import rand, shuffle
+from numpy.random import shuffle
 import SimpleITK as sitk
 from tqdm import tqdm
 
@@ -129,7 +129,7 @@ def split_data(root_path, num_splits=4):
 def convert_data_to_numpy(root_path, img_name, mask_name, net_input_shape, no_masks=False, overwrite=False):
     fname = splitext(img_name)[0]
     numpy_path = join(root_path, 'np_files')
-    img_path = join(root_path, 'imgs')
+    img_path = join(root_path, 'images')
     mask_path = join(root_path, 'masks')
     fig_path = join(root_path, 'figs')
     try:
@@ -314,7 +314,7 @@ def threadsafe_generator(f):
 def generate_train_batches(root_path, train_list, net_input_shape, net, batch_size=1, shuff=True, aug_data=False):
     # Create placeholders for training
     img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
-    mask_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.uint8)
+    mask_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape[:2]))), dtype=np.uint8)
 
     while True:
         if shuff:
@@ -336,16 +336,9 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batch_si
                 else:
                     print('\nFinished making npz file.')
 
-            # mask = np.zeros((train_mask.shape[0], train_mask.shape[1], 4))
-            # mask[train_mask == 0, 0] = 1
-            # mask[train_mask == 85, 1] = 1
-            # mask[train_mask == 170, 2] = 1
-            # mask[train_mask == 255, 3] = 1
-            # train_mask = mask
-
-            img_batch[count, :, :, 0] = train_img[:, :]
+            img_batch[count, :, :, :] = train_img
             img_batch /= 255
-            mask_batch[count, :, :, 0] = train_mask[:, :]
+            mask_batch[count, :, :] = train_mask
 
             count += 1
             if count % batch_size == 0:
@@ -353,12 +346,13 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batch_si
                 if aug_data:
                     img_batch, mask_batch = augmentImages(img_batch, mask_batch)
 
-                mask = mask_batch.squeeze(axis=-1)
-                mask_batch_hot = np.zeros((batch_size, train_mask.shape[0], train_mask.shape[1], 4))
-                mask_batch_hot[mask == 0, 0] = 1
-                mask_batch_hot[mask == 85, 1] = 1
-                mask_batch_hot[mask == 170, 2] = 1
-                mask_batch_hot[mask == 255, 3] = 1
+                mask_batch_hot = to_one_hot(mask_batch)
+                # mask = mask_batch.squeeze(axis=-1)
+                # mask_batch_hot = np.zeros((batch_size, train_mask.shape[0], train_mask.shape[1], 4))
+                # mask_batch_hot[mask == 0, 0] = 1
+                # mask_batch_hot[mask == 85, 1] = 1
+                # mask_batch_hot[mask == 170, 2] = 1
+                # mask_batch_hot[mask == 255, 3] = 1
                 # if debug:
                 #     if img_batch.ndim == 4:
                 #         plt.imshow(np.squeeze(img_batch[0, :, :, 0]), cmap='gray')
@@ -392,7 +386,7 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batch_si
 def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1, shuff=1):
     # Create placeholders for validation
     img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
-    mask_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.uint8)
+    mask_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape[:2]))), dtype=np.uint8)
 
     while True:
         if shuff:
@@ -414,20 +408,21 @@ def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1
                 else:
                     print('\nFinished making npz file.')
 
-            img_batch[count, :, :, 0] = val_img[:, :]
+            img_batch[count, :, :, :] = val_img
             img_batch /= 255
-            mask_batch[count, :, :, 0] = val_mask[:, :]
+            mask_batch[count, :, :] = val_mask
 
             count += 1
             if count % batch_size == 0:
                 count = 0
 
-                mask = mask_batch.squeeze(axis=-1)
-                mask_batch_hot = np.zeros((batch_size, val_mask.shape[0], val_mask.shape[1], 4))
-                mask_batch_hot[mask == 0, 0] = 1
-                mask_batch_hot[mask == 85, 1] = 1
-                mask_batch_hot[mask == 170, 2] = 1
-                mask_batch_hot[mask == 255, 3] = 1
+                mask_batch_hot = to_one_hot(mask_batch)
+                # mask = mask_batch.squeeze(axis=-1)
+                # mask_batch_hot = np.zeros((batch_size, val_mask.shape[0], val_mask.shape[1], 4))
+                # mask_batch_hot[mask == 0, 0] = 1
+                # mask_batch_hot[mask == 85, 1] = 1
+                # mask_batch_hot[mask == 170, 2] = 1
+                # mask_batch_hot[mask == 255, 3] = 1
                 if net.find('caps') != -1:
                     # yield ([img_batch, mask_batch], [mask_batch, mask_batch * img_batch])
                     img_masked = mask_batch_hot * img_batch
@@ -492,3 +487,8 @@ def generate_test_batches(root_path, test_list, net_input_shape, batchSize=1, nu
 
     if count != 0:
         yield (img_batch[:count, :, :, :])
+
+
+def to_one_hot(values):
+    n_values = np.max(values) + 1
+    return np.eye(n_values)[values]
