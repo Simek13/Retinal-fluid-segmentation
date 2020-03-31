@@ -20,12 +20,12 @@ plt.ioff()
 from os.path import join
 import numpy as np
 
-from keras.optimizers import Adam
-from keras import backend as K
+from tensorflow.keras.optimizers import Adam, Adadelta
+from tensorflow.keras import backend as K
 
 K.set_image_data_format('channels_last')
-from keras.utils import multi_gpu_model
-from keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping, ReduceLROnPlateau, TensorBoard
+from tensorflow.keras.utils import multi_gpu_model
+from tensorflow.keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping, ReduceLROnPlateau, TensorBoard
 import tensorflow as tf
 
 from custom_losses import dice_hard, weighted_binary_crossentropy_loss, margin_loss, \
@@ -100,7 +100,10 @@ def get_callbacks(arguments):
 
 def compile_model(args, net_input_shape, uncomp_model):
     # Set optimizer loss and metrics
-    opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
+    if args.net == 'matwo':
+        opt = Adadelta()
+    else:
+        opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
         # metrics = {'out_seg': 'categorical_accuracy'}
         metrics = {'out_seg': weighted_dice_coef(S_PRESENCE)}

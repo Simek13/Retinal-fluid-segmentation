@@ -47,7 +47,7 @@ def main(args):
 
     # Create the model for training/testing/manipulation
     model_list = create_model(args=args, input_shape=net_input_shape)
-    print_summary(model=model_list[0], positions=[.38, .65, .75, 1.])
+    # print_summary(model=model_list[0], positions=[.38, .65, .75, 1.])
 
     args.output_name = 'split-' + str(args.split_num) + '_batch-' + str(args.batch_size) + \
                        '_shuff-' + str(args.shuffle_data) + '_aug-' + str(args.aug_data) + \
