@@ -178,7 +178,7 @@ def train(args, train_list, val_list, u_model, net_input_shape):
     callbacks = get_callbacks(args)
 
     # Training the network
-    history = model.fit_generator(
+    history = model.fit(
         generate_train_batches(args.data_root_dir, train_list, net_input_shape, net=args.net,
                                batch_size=args.batch_size, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,

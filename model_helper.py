@@ -33,9 +33,10 @@ def create_model(args, input_shape):
             model_list = CapsNetBasic(input_shape)
             return model_list
         elif args.net == 'matwo':
-            from capsnet import Matwo_CapsNet
+            from capsnet import Matwo_CapsNet, MatwoCapsNet
             input_shape = (args.batch_size,) + input_shape
-            model = Matwo_CapsNet(input_shape)
+            model = MatwoCapsNet()
+            model.build(input_shape)
             return [model]
         else:
             raise Exception('Unknown network type specified: {}'.format(args.net))
