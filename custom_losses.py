@@ -218,7 +218,6 @@ def tversky_loss(y_true, y_pred):
 
 
 def weighted_dice(y_true, y_pred, weights, smooth=1e-7):
-
     if not weights:
         w = K.sum(y_true, axis=(0, 1, 2))
         w = K.sum(w) / (w + K.constant(1, dtype=tf.float32))
@@ -238,7 +237,6 @@ def weighted_dice(y_true, y_pred, weights, smooth=1e-7):
 
 
 def weighted_dice_coef(weights=()):
-
     def coef(y_true, y_pred, from_logits=False):
         return weighted_dice(y_true, y_pred, weights)
 
@@ -246,7 +244,6 @@ def weighted_dice_coef(weights=()):
 
 
 def weighted_dice_loss(weights=()):
-
     def loss(y_true, y_pred, from_logits=False):
         return 1 - weighted_dice(y_true, y_pred, weights)
 
@@ -254,7 +251,6 @@ def weighted_dice_loss(weights=()):
 
 
 def weighted_mse_loss(weight=-1):
-
     def weighted_mse(y_true, y_pred, smooth=1e-7):
         if weight == -1:
             n_el = K.constant(256 * 256, dtype='int64')
@@ -279,3 +275,18 @@ def weighted_mse_loss(weight=-1):
     return weighted_mse
 
 
+def spread_loss(labels, logits, m_low=0.2, m_hight=0.9, iteration_low_to_high=100000, global_step=100000):
+    m = m_low + (m_hight - m_low) * tf.minimum(tf.cast(global_step / iteration_low_to_high, dtype=tf.float32),
+                                               tf.cast(1, dtype=tf.float32))
+    n_labels = labels.get_shape()[1]
+    labels = tf.transpose(labels, (1, 0, 2, 3))
+    logits = tf.transpose(logits, (1, 0, 2, 3))
+    labels = tf.reshape(labels, [n_labels, -1])
+    logits = tf.reshape(logits, [n_labels, -1])
+
+    true_class_logits = tf.reduce_max(labels * logits, axis=0)
+    margin_loss_pixel_class = tf.square(tf.nn.relu((m - true_class_logits + logits) * (1 - labels)))
+
+    loss = tf.reduce_mean(tf.reduce_sum(margin_loss_pixel_class, axis=0))
+
+    return loss

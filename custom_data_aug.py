@@ -50,13 +50,13 @@ def salt_pepper_noise(image, salt=0.2, amount=0.004):
     num_salt = np.ceil(amount * row * salt)
     num_pepper = np.ceil(amount * row * (1.0 - salt))
 
-    for n in range(chan//2): # //2 so we don't augment the mask
+    for n in range(chan//2):  # //2 so we don't augment the mask
         # Add Salt noise
         coords = [np.random.randint(0, i - 1, int(num_salt)) for i in image.shape[0:2]]
         image[coords[0], coords[1], n] = 1
 
         # Add Pepper noise
         coords = [np.random.randint(0, i - 1, int(num_pepper)) for i in image.shape[0:2]]
-        image[coords[0], coords[1], n] = 0
+        image[coords[0], coords[1], n] = -1
 
     return image

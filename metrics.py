@@ -12,6 +12,41 @@ from scipy.ndimage.measurements import label, find_objects
 from scipy.stats import pearsonr
 
 
+class TpFpFnMetricBase():
+    def calculate_tp_fp_fn(self, prediction, groundtruth, label):
+        tp = np.sum(np.logical_and(prediction == label, groundtruth == label))
+        fp = np.sum(np.logical_and(prediction == label, groundtruth != label))
+        fn = np.sum(np.logical_and(prediction != label, groundtruth == label))
+        return tp, fp, fn
+
+    def calculate_tp_fp_fn_scores(self, prediction, groundtruth, labels):
+        scores = []
+        for label in labels:
+            tp, fp, fn = self.calculate_tp_fp_fn(prediction, groundtruth, label)
+            current_score = self.evaluate_function(tp, fp, fn)
+            scores.append(current_score)
+        return np.nanmean(scores)
+
+    def __call__(self, prediction, groundtruth, labels):
+        return self.calculate_tp_fp_fn_scores(prediction, groundtruth, labels)
+
+    def evaluate_function(self, tp, fp, fn):
+        raise NotImplementedError()
+
+
+class DiceMetric(TpFpFnMetricBase):
+    def evaluate_function(self, tp, fp, fn):
+        return 2 * tp / (2 * tp + fp + fn)
+
+
+class JaccardMetric(TpFpFnMetricBase):
+    def evaluate_function(self, tp, fp, fn):
+        return tp / (tp + fp + fn) if tp + fp + fn > 0 else 1
+
+# ----------------
+# BINARY METRICS
+# ----------------
+
 def dc(result, reference):
     r"""
     Dice coefficient

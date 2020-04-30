@@ -59,7 +59,7 @@ def get_loss(root, split, net, recon_wei, choice):
     elif choice == 'mar':
         loss = margin_loss(margin=0.4, downweight=0.5, pos_weight=1.0)
     elif choice == 'cce':
-        loss = WeightedCategoricalCrossEntropy({k: v for k, v in enumerate(S_PRESENCE_MSE)})
+        loss = 'categorical_crossentropy'
     elif choice == 'scce':
         loss = 'sparse_categorical_crossentropy'
     else:
@@ -83,7 +83,8 @@ def get_callbacks(arguments):
         # monitor_name = 'val_out_seg_categorical_accuracy'
         monitor_name = 'val_out_seg_loss'
     else:
-        monitor_name = 'val_dice_hard'
+        # monitor_name = 'val_dice_hard'
+        monitor_name = 'val_categorical_accuracy'
 
     csv_logger = CSVLogger(join(arguments.log_dir, arguments.output_name + '_log_' + arguments.time + '.csv'),
                            separator=',')
@@ -100,10 +101,10 @@ def get_callbacks(arguments):
 
 def compile_model(args, net_input_shape, uncomp_model):
     # Set optimizer loss and metrics
-    if args.net == 'matwo':
-        opt = Adadelta()
-    else:
-        opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
+    # if args.net == 'matwo':
+    #     opt = Adadelta()
+    # else:
+    opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
         # metrics = {'out_seg': 'categorical_accuracy'}
         metrics = {'out_seg': weighted_dice_coef(S_PRESENCE)}
@@ -117,7 +118,7 @@ def compile_model(args, net_input_shape, uncomp_model):
 
     # If using CPU or single GPU
     if args.gpus <= 1:
-        uncomp_model.compile(optimizer=opt, loss=loss, metrics=metrics)
+        uncomp_model.compile(optimizer=opt, loss=loss, loss_weights=loss_weighting, metrics=metrics)
         return uncomp_model
     # If using multiple GPUs
     else:
@@ -139,17 +140,19 @@ def plot_training(training_history, arguments):
         ax1.plot(training_history.history['out_seg_coef'])
         ax1.plot(training_history.history['val_out_seg_coef'])
     else:
-        ax1.plot(training_history.history['dice_hard'])
-        ax1.plot(training_history.history['val_dice_hard'])
-    ax1.set_title('Dice coefficient')
-    ax1.set_ylabel('Dice', fontsize=12)
+        # ax1.plot(training_history.history['dice_hard'])
+        # ax1.plot(training_history.history['val_dice_hard'])
+        ax1.plot(training_history.history['categorical_accuracy'])
+        ax1.plot(training_history.history['val_categorical_accuracy'])
+    ax1.set_title('Categorical Accuracy')
+    ax1.set_ylabel('Accuracy', fontsize=12)
     ax1.legend(['Train', 'Val'], loc='upper left')
     ax1.set_yticks(np.arange(0, 1.05, 0.05))
     if arguments.net.find('caps') != -1:
         # ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
         ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_coef'])))
     else:
-        ax1.set_xticks(np.arange(0, len(training_history.history['dice_hard'])))
+        ax1.set_xticks(np.arange(0, len(training_history.history['categorical_accuracy'])))
     ax1.grid(True)
     gridlines1 = ax1.get_xgridlines() + ax1.get_ygridlines()
     for line in gridlines1:

@@ -52,7 +52,7 @@ class DualLength(layers.Layer):
         x = tf.transpose(inputs, (0, 3, 4, 1, 2))
         x_mat, x_mat2 = tf.split(x, [np.product(self.pos_dim), np.product(self.app_dim)], axis=-1)
         pred = tf.norm(x_mat, axis=-1) * tf.norm(x_mat2, axis=-1)
-        return softmax(pred)
+        return softmax(pred, axis=-1)
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0],) + input_shape[3:] + (input_shape[1],)
@@ -356,8 +356,6 @@ class PrimaryCaps2dMatwo(layers.Layer):
         self.W_app = self.add_weight(shape=[self.num_capsule, self.app_dim[0], self.app_dim[1]],
                                      initializer=self.kernel_initializer,
                                      name='W_app', trainable=True)
-        self.H_1 = self.input_height * self.strides
-        self.W_1 = self.input_width * self.strides
 
         self.built = True
 
@@ -367,29 +365,31 @@ class PrimaryCaps2dMatwo(layers.Layer):
                            padding=self.padding, data_format=self.data_format)
 
         # H_1 = u_t_app.get_shape()[1]
-        #         # W_1 = u_t_app.get_shape()[2]
+        # W_1 = u_t_app.get_shape()[2]
+        H_1 = tf.shape(u_t_app)[1]
+        W_1 = tf.shape(u_t_app)[2]
 
         # Initialize the pose matrix with identity
-        u_t_pos = tf.zeros([self.batch, self.H_1, self.W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]],
+        u_t_pos = tf.zeros([self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]],
                           dtype='float32')
-        u_t_pos = K.reshape(u_t_pos,
-                            [self.batch * self.H_1 * self.W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
+        u_t_pos = tf.reshape(u_t_pos,
+                            [self.batch * H_1 * W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
         identity = tf.eye(self.pos_dim[1])
         identity = identity[self.pos_dim[1] - self.pos_dim[0]:, :]
         u_t_pos += identity
-        u_hat_t_pos = K.reshape(u_t_pos, [self.batch, self.H_1, self.W_1, self.num_capsule, np.prod(self.pos_dim)])
+        u_hat_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, np.prod(self.pos_dim)])
 
         # Apply the matrix multiplication to the appearance matrix
-        u_t_app = K.reshape(u_t_app,
-                            [self.batch, self.H_1, self.W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
+        u_t_app = tf.reshape(u_t_app,
+                            [self.batch, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
         u_t_app = mat_mult_2d(u_t_app, self.W_app)
-        u_hat_t_app = K.reshape(u_t_app, [self.batch, self.H_1, self.W_1, self.num_capsule, np.prod(self.app_dim)])
+        u_hat_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, np.prod(self.app_dim)])
 
         # Squash the appearance matrix (Psquashing the pose won't change it)
         v_pos = u_hat_t_pos
         v_app = matwo_squash(u_hat_t_app)
 
-        v = K.concatenate([v_pos, v_app], axis=-1)
+        v = tf.concat([v_pos, v_app], axis=-1)
         outputs = tf.transpose(v, (
             0, 3, 4, 1,
             2))  # [t_1, N, H_1, W_1, z_1] => [N, t, z , H, W] #[N, H_1, W_1, t_1, z_1] => [N, t, z , H_1, W_1]
@@ -493,9 +493,9 @@ class Caps2dMatwo(layers.Layer):
         u_hat_t_list = []
 
         # Split input_tensor by capsule types
-        u_t_list = [K.squeeze(u_t, axis=1) for u_t in tf.split(input_tensor, self.input_num_capsule, axis=1)]
+        u_t_list = [tf.squeeze(u_t, axis=1) for u_t in tf.split(input_tensor, self.input_num_capsule, axis=1)]
         for u_t in u_t_list:
-            u_t = K.reshape(u_t, [self.batch * self.channels, self.input_height, self.input_width, 1])
+            u_t = tf.reshape(u_t, [self.batch * self.channels, self.input_height, self.input_width, 1])
             u_t.set_shape((None, self.input_height, self.input_width, 1))
 
             # Apply spatial kernel
@@ -517,31 +517,31 @@ class Caps2dMatwo(layers.Layer):
             # Some shape operation
             H_1 = u_spat_t.get_shape()[1]
             W_1 = u_spat_t.get_shape()[2]
-            u_spat_t = K.reshape(u_spat_t, [self.batch, self.channels, H_1, W_1, self.num_capsule])
+            # H_1 = tf.shape(u_spat_t)[1]
+            # W_1 = tf.shape(u_spat_t)[2]
+            u_spat_t = tf.reshape(u_spat_t, [self.batch, self.channels, H_1, W_1, self.num_capsule])
             u_spat_t = tf.transpose(u_spat_t, (0, 2, 3, 4, 1))
-            u_spat_t = K.reshape(u_spat_t, [self.batch, H_1, W_1, self.num_capsule * self.channels])
+            u_spat_t = tf.reshape(u_spat_t, [self.batch, H_1, W_1, self.num_capsule * self.channels])
 
             # Split convolution output of input_tensor to Pose and Appearance matrices
             u_t_pos, u_t_app = tf.split(u_spat_t, [self.num_capsule * z_pos, self.num_capsule * z_app], axis=-1)
-            u_t_pos = K.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
-            u_t_app = K.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
+            u_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
+            u_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, self.app_dim[0], self.app_dim[1]])
 
             # Gather projection matrices and bias
             # Take appropriate capsule type
             mult_pos = tf.gather(self.W_pos, idx_all, axis=0)
-            mult_pos = K.reshape(mult_pos, [self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
+            mult_pos = tf.reshape(mult_pos, [self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
             mult_app = tf.gather(self.W_app, idx_all, axis=0)
-            mult_app = K.reshape(mult_app, [self.num_capsule, self.app_dim[1], self.app_dim[1]])
+            mult_app = tf.reshape(mult_app, [self.num_capsule, self.app_dim[1], self.app_dim[1]])
             bias = tf.reshape(tf.gather(self.b_app, idx_all, axis=0), (1, 1, 1, self.num_capsule, 1, 1))
 
             u_t_app += bias
 
             # Prepare the pose projection matrix
 
-            # Why does he normalize second dimension?
             mult_pos = K.l2_normalize(mult_pos, axis=-2)
             if self.coord_add:
-                # Zašto dodaje na prvu dimenziju normalizirane koordinate?
                 mult_pos = coordinate_addition(mult_pos,
                                                [1, H_1, W_1, self.num_capsule, self.pos_dim[1], self.pos_dim[1]])
 
@@ -549,14 +549,14 @@ class Caps2dMatwo(layers.Layer):
             u_t_app = mat_mult_2d(u_t_app, mult_app)
 
             # Store the result
-            u_hat_t_pos = K.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, z_pos])
-            u_hat_t_app = K.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, z_app])
-            u_hat_t = K.concatenate([u_hat_t_pos, u_hat_t_app], axis=-1)
+            u_hat_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, z_pos])
+            u_hat_t_app = tf.reshape(u_t_app, [self.batch, H_1, W_1, self.num_capsule, z_app])
+            u_hat_t = tf.concat([u_hat_t_pos, u_hat_t_app], axis=-1)
             u_hat_t_list.append(u_hat_t)
 
             idx_all += 1
 
-        u_hat_t_list = K.stack(u_hat_t_list, axis=-2)
+        u_hat_t_list = tf.stack(u_hat_t_list, axis=-2)
         u_hat_t_list = tf.transpose(u_hat_t_list,
                                     [0, 5, 1, 2, 4, 3])  # [N, H, W, t_1, t_0, z]  = > [N, z, H_1, W_1, t_0, t_1]
 
@@ -577,25 +577,25 @@ class Caps2dMatwo(layers.Layer):
                 raise ValueError(self.routing_type + ' is an invalid routing; try dynamic or dual')
         else:
             self.routing_type = 'NONE'
-            c = K.ones([self.batch, H_1, W_1, self.input_num_capsule, self.num_capsule])
-            c_t_list = [K.squeeze(c_t, axis=-1) for c_t in tf.split(c, self.num_capsule, axis=-1)]
+            c = tf.ones([self.batch, H_1, W_1, self.input_num_capsule, self.num_capsule])
+            c_t_list = [tf.squeeze(c_t, axis=-1) for c_t in tf.split(c, self.num_capsule, axis=-1)]
 
         # Form each parent capsule through the weighted sum of all child capsules
         r_t_mul_u_hat_t_list = []
-        u_hat_t_list_ = [(K.squeeze(u_hat_t, axis=-1)) for u_hat_t in tf.split(u_hat_t_list, self.num_capsule, axis=-1)]
+        u_hat_t_list_ = [(tf.squeeze(u_hat_t, axis=-1)) for u_hat_t in tf.split(u_hat_t_list, self.num_capsule, axis=-1)]
         for c_t, u_hat_t in zip(c_t_list, u_hat_t_list_):
-            r_t = K.expand_dims(c_t, axis=1)
-            r_t_mul_u_hat_t_list.append(K.sum(r_t * u_hat_t, axis=-1))
+            r_t = tf.expand_dims(c_t, axis=1)
+            r_t_mul_u_hat_t_list.append(tf.reduce_sum(r_t * u_hat_t, axis=-1))
 
         p = r_t_mul_u_hat_t_list
-        p = K.stack(p, axis=1)
+        p = tf.stack(p, axis=1)
         p_pos, p_app = tf.split(p, [z_pos, z_app], axis=2)
 
         # Squash the weighted sum to form the final parent capsule
         v_pos = Psquash(p_pos, axis=2)
         v_app = matwo_squash(p_app, axis=2)
 
-        outputs = K.concatenate([v_pos, v_app], axis=2)
+        outputs = tf.concat([v_pos, v_app], axis=2)
 
         return outputs
 
@@ -694,30 +694,30 @@ def _squash(input_tensor):
 
 
 def matwo_squash(p, axis=-1):
-    p_norm_sq = K.sum(K.square(p), axis=axis, keepdims=True)
-    p_norm = K.sqrt(p_norm_sq + 1e-9)
+    p_norm_sq = tf.reduce_sum(tf.square(p), axis=axis, keepdims=True)
+    p_norm = tf.sqrt(p_norm_sq + 1e-9)
     return p_norm_sq / (1. + p_norm_sq) * p / p_norm
 
 
 def Psquash(p, axis=-1):
-    return p / K.max(K.abs(p), axis=axis, keepdims=True)
+    return p / tf.reduce_max(tf.abs(p), axis=axis, keepdims=True)
 
-
+# u_t_pos = tf.reshape(u_t_pos, [self.batch, H_1, W_1, self.num_capsule, self.pos_dim[0], self.pos_dim[1]])
 def mat_mult_2d(a, b):
     mat = []
     for i in range(a.get_shape()[-2]):
-        mat.append(tf.multiply(K.expand_dims(tf.gather(a, i, axis=-2), axis=-1), b))
-    return K.sum(K.stack(mat, axis=-3), axis=-2)
+        mat.append(tf.multiply(tf.expand_dims(tf.gather(a, i, axis=-2), axis=-1), b))
+    return tf.reduce_sum(tf.stack(mat, axis=-3), axis=-2)
 
 
 def routing2d(routing, t_0, u_hat_t_list):
     N, z_1, H_1, W_1, o, t_1 = u_hat_t_list.get_shape().as_list()
 
     c_t_list = []
-    b = K.zeros([N, H_1, W_1, t_0, t_1])
-    b_t_list = [K.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
+    b = tf.zeros([N, H_1, W_1, t_0, t_1])
+    b_t_list = [tf.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
 
-    u_hat_t_list_ = [K.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
+    u_hat_t_list_ = [tf.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
     for d in range(routing):
 
         r_t_mul_u_hat_t_list = []
@@ -725,9 +725,9 @@ def routing2d(routing, t_0, u_hat_t_list):
             r_t = actv.softmax(b_t, axis=-1)
 
             if d < routing - 1:
-                r_t = K.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
+                r_t = tf.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
                 r_t_mul_u_hat_t_list.append(
-                    K.sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
+                    tf.reduce_sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
 
             else:
                 c_t_list.append(r_t)
@@ -740,10 +740,10 @@ def routing2d(routing, t_0, u_hat_t_list):
             idx = 0
 
             for b_t, u_hat_t in zip(b_t_list, u_hat_t_list_):
-                v_t1 = K.reshape(tf.gather(v, [idx], axis=0), [N, z_1, H_1, W_1, 1])
+                v_t1 = tf.reshape(tf.gather(v, [idx], axis=0), [N, z_1, H_1, W_1, 1])
 
                 # Evaluate agreement
-                rout = K.sum(v_t1 * u_hat_t)
+                rout = tf.reduce_sum(v_t1 * u_hat_t)
                 b_t_list_.append(b_t + rout)
                 idx += 1
 
@@ -756,9 +756,9 @@ def dual_routing(routing, t_0, u_hat_t_list, z_pos, z_app):
 
     c_t_list = []
     b = tf.zeros([N, H_1, W_1, t_0, t_1])
-    b_t_list = [K.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
+    b_t_list = [tf.squeeze(b_t, axis=-1) for b_t in tf.split(b, t_1, axis=-1)]
 
-    u_hat_t_list_ = [K.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
+    u_hat_t_list_ = [tf.squeeze(u_hat_t, axis=-1) for u_hat_t in tf.split(u_hat_t_list, t_1, axis=-1)]
     for d in range(routing):
         r_t_mul_u_hat_t_list = []
 
@@ -766,9 +766,9 @@ def dual_routing(routing, t_0, u_hat_t_list, z_pos, z_app):
             r_t = actv.sigmoid(b_t)
 
             if d < routing - 1:
-                r_t = K.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
+                r_t = tf.expand_dims(r_t, axis=1)  # [N, 1, H_1, W_1, t_0]
                 r_t_mul_u_hat_t_list.append(
-                    K.sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
+                    tf.reduce_sum(r_t * u_hat_t, axis=-1))  # sum along the capsule to form the output
 
             else:
                 c_t_list.append(r_t)
@@ -783,11 +783,11 @@ def dual_routing(routing, t_0, u_hat_t_list, z_pos, z_app):
             idx = 0
             for b_t, u_hat_t in zip(b_t_list, u_hat_t_list_):
                 u_hat_pos, u_hat_app = tf.split(u_hat_t, [z_pos, z_app], axis=1)
-                v_t1_pos = K.reshape(tf.gather(v_pos, [idx], axis=0), [N, z_pos, H_1, W_1, 1])
-                v_t1_app = K.reshape(tf.gather(v_app, [idx], axis=0), [N, z_app, H_1, W_1, 1])
+                v_t1_pos = tf.reshape(tf.gather(v_pos, [idx], axis=0), [N, z_pos, H_1, W_1, 1])
+                v_t1_app = tf.reshape(tf.gather(v_app, [idx], axis=0), [N, z_app, H_1, W_1, 1])
 
                 # Evaluate agreement
-                rout = K.sum(u_hat_pos * v_t1_pos, axis=1) * K.sum(u_hat_app * v_t1_app, axis=1)
+                rout = tf.reduce_sum(u_hat_pos * v_t1_pos, axis=1) * tf.reduce_sum(u_hat_app * v_t1_app, axis=1)
                 b_t_list_.append(b_t + rout)
                 idx += 1
 
@@ -811,5 +811,5 @@ def coordinate_addition(b, shape):
     coord_add[:, 0, -1, 1] /= shape[1]
 
     b += (coord_add)
-    b = K.reshape(b, shape)
+    b = tf.reshape(b, shape)
     return b
