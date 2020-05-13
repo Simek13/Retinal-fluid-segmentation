@@ -8,6 +8,7 @@ If you have any questions, please email me at lalonde@knights.ucf.edu.
 This is a helper file for choosing which model to create.
 '''
 import tensorflow as tf
+from load_3D_data import num_labels
 
 def create_model(args, input_shape):
     # If using CPU or single GPU
@@ -35,7 +36,7 @@ def create_model(args, input_shape):
         elif args.net == 'matwo':
             from capsnet import Matwo_CapsNet, MatwoCapsNet
             input_shape = (args.batch_size,) + input_shape
-            model = Matwo_CapsNet(input_shape)
+            model = Matwo_CapsNet(input_shape, num_labels=num_labels(args.data_root_dir))
             # model.build(input_shape)
             return [model]
         else:
@@ -66,7 +67,7 @@ def create_model(args, input_shape):
             elif args.net == 'matwo':
                 from capsnet import Matwo_CapsNet
                 input_shape = (args.batch_size,) + input_shape
-                model = Matwo_CapsNet(input_shape)
+                model = Matwo_CapsNet(input_shape, num_labels=num_labels(args.data_root_dir))
                 return [model]
             else:
                 raise Exception('Unknown network type specified: {}'.format(args.net))

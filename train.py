@@ -11,6 +11,7 @@ This file is used for training models. Please see the README for details about t
 from __future__ import print_function
 
 import matplotlib
+from keras.callbacks import Callback
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -29,7 +30,8 @@ from tensorflow.keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping
 import tensorflow as tf
 
 from custom_losses import dice_hard, weighted_binary_crossentropy_loss, margin_loss, \
-    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse_loss, weighted_dice_loss
+    WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse_loss, weighted_dice_loss, spread_loss, dice_soft, \
+    weighted_spread_loss
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
 # CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 0.003555870045612856, 1: 0.874566629820256, 2: 1.0, 3: 0.8723247732858718}
@@ -39,7 +41,9 @@ from load_3D_data import load_class_weights, generate_train_batches, generate_va
 C_PIXEL = (0.003555870045612856, 0.874566629820256, 1.0, 0.8723247732858718)
 C_PRESENCE = (0.20247395833333331, 0.6652406417112299, 0.8885714285714286, 1.0)
 S_PIXEL = (0.0031737332265260555, 0.5547157937848298, 0.5589333800101778, 1.0)
+S_PIXELS = (1., 0.00572137, 0.0056782,  0.00317373)
 S_PRESENCE = (0.2568027210884354, 0.6003976143141153, 0.8908554572271387, 1.0)
+S_PRESENCES = (1., 0.42772109, 0.28826531, 0.25680272)
 S_PRESENCE_MSE = (1.0, 2.337972166998012, 3.4690265486725664, 3.8940397350993377)
 S_PIXEL_MSE = (0.014573297188993577, 176.3305415840263, 177.67881191975138, 318.6781911942668)
 CCE_WEIGHTS = (1.0, 174.78337156649349, 176.11227539183628, 315.08634425918416)
@@ -62,6 +66,14 @@ def get_loss(root, split, net, recon_wei, choice):
         loss = 'categorical_crossentropy'
     elif choice == 'scce':
         loss = 'sparse_categorical_crossentropy'
+    elif choice == 'spread':
+        loss = spread_loss(epoch_step=EpochCounter.counter)
+    elif choice == 'w_spread':
+        if 'Spectralis' in root:
+            weights = np.array(S_PRESENCES)
+        else:
+            weights = np.array(C_PRESENCE)
+        loss = weighted_spread_loss(weights=weights, epoch_step=EpochCounter.counter)
     else:
         raise Exception("Unknow loss_type")
 
@@ -70,12 +82,22 @@ def get_loss(root, split, net, recon_wei, choice):
                 'recon1': weighted_mse_loss(S_PIXEL_MSE[1]),
                 'recon2': weighted_mse_loss(S_PIXEL_MSE[2]),
                 'recon3': weighted_mse_loss(S_PIXEL_MSE[3])}, {'out_seg': 1., 'recon0': recon_wei,
-                                                                                     'recon1': recon_wei,
-                                                                                     'recon2': recon_wei,
-                                                                                     'recon3': recon_wei}
+                                                               'recon1': recon_wei,
+                                                               'recon2': recon_wei,
+                                                               'recon3': recon_wei}
         # return {'out_seg': loss}, None
     else:
         return loss, None
+
+
+class EpochCounter(Callback):
+    counter = K.variable(0.)
+
+    def __init__(self):
+        super().__init__()
+
+    def on_epoch_end(self, epoch, logs={}):
+        K.set_value(EpochCounter.counter, epoch + 1)
 
 
 def get_callbacks(arguments):
@@ -84,7 +106,7 @@ def get_callbacks(arguments):
         monitor_name = 'val_out_seg_loss'
     else:
         # monitor_name = 'val_dice_hard'
-        monitor_name = 'val_categorical_accuracy'
+        monitor_name = 'val_dice_soft'
 
     csv_logger = CSVLogger(join(arguments.log_dir, arguments.output_name + '_log_' + arguments.time + '.csv'),
                            separator=',')
@@ -96,7 +118,9 @@ def get_callbacks(arguments):
     lr_reducer = ReduceLROnPlateau(monitor=monitor_name, factor=0.05, cooldown=0, patience=5, verbose=1, mode='max')
     early_stopper = EarlyStopping(monitor=monitor_name, min_delta=0, patience=25, verbose=0, mode='max')
 
-    return [model_checkpoint, csv_logger, lr_reducer, early_stopper, tb]
+    epoch_counter = EpochCounter()
+
+    return [model_checkpoint, csv_logger, lr_reducer, early_stopper, tb, epoch_counter]
 
 
 def compile_model(args, net_input_shape, uncomp_model):
@@ -109,7 +133,8 @@ def compile_model(args, net_input_shape, uncomp_model):
         # metrics = {'out_seg': 'categorical_accuracy'}
         metrics = {'out_seg': weighted_dice_coef(S_PRESENCE)}
     elif args.net == 'matwo':
-        metrics = ['categorical_accuracy']
+        # metrics = ['categorical_accuracy']
+        metrics = [dice_soft]
     else:
         metrics = [dice_hard]
 
@@ -142,17 +167,19 @@ def plot_training(training_history, arguments):
     else:
         # ax1.plot(training_history.history['dice_hard'])
         # ax1.plot(training_history.history['val_dice_hard'])
-        ax1.plot(training_history.history['categorical_accuracy'])
-        ax1.plot(training_history.history['val_categorical_accuracy'])
-    ax1.set_title('Categorical Accuracy')
-    ax1.set_ylabel('Accuracy', fontsize=12)
+        # ax1.plot(training_history.history['categorical_accuracy'])
+        # ax1.plot(training_history.history['val_categorical_accuracy'])
+        ax1.plot(training_history.history['dice_soft'])
+        ax1.plot(training_history.history['val_dice_soft'])
+    ax1.set_title('Dice Soft')
+    ax1.set_ylabel('Dice', fontsize=12)
     ax1.legend(['Train', 'Val'], loc='upper left')
     ax1.set_yticks(np.arange(0, 1.05, 0.05))
     if arguments.net.find('caps') != -1:
         # ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_categorical_accuracy'])))
         ax1.set_xticks(np.arange(0, len(training_history.history['out_seg_coef'])))
     else:
-        ax1.set_xticks(np.arange(0, len(training_history.history['categorical_accuracy'])))
+        ax1.set_xticks(np.arange(0, len(training_history.history['dice_soft'])))
     ax1.grid(True)
     gridlines1 = ax1.get_xgridlines() + ax1.get_ygridlines()
     for line in gridlines1:
@@ -180,15 +207,28 @@ def train(args, train_list, val_list, u_model, net_input_shape):
     # Set the callbacks
     callbacks = get_callbacks(args)
 
+    if args.data_root_dir.find('Spectralis') != -1:
+        steps_per_epoch = 1058
+        validation_steps = 118
+    elif args.data_root_dir.find('JSRT') != -1:
+        steps_per_epoch = 221
+        validation_steps = 25
+    elif args.data_root_dir.find('Layers') != -1:
+        steps_per_epoch = 1304
+        validation_steps = 145
+    else:
+        steps_per_epoch = 1304
+        validation_steps = 145
+
     # Training the network
     history = model.fit(
         generate_train_batches(args.data_root_dir, train_list, net_input_shape, net=args.net,
                                batch_size=args.batch_size, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
-        steps_per_epoch=221,
+        steps_per_epoch=steps_per_epoch,
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batch_size=args.batch_size, shuff=args.shuffle_data),
-        validation_steps=25,  # Set validation stride larger to see more of the data.
+        validation_steps=validation_steps,  # Set validation stride larger to see more of the data.
         epochs=20,
         callbacks=callbacks,
         verbose=1)

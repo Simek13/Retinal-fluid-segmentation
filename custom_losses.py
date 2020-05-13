@@ -15,7 +15,7 @@ import numpy as np
 import itertools
 
 
-def dice_soft(y_true, y_pred, loss_type='sorensen', axis=[1, 2, 3], smooth=1e-5, from_logits=False):
+def dice_soft(y_true, y_pred, loss_type='sorensen', axis=(0, 1, 2), smooth=1e-5):
     """Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation
     i.e. labels are binary. The coefficient between 0 to 1, 1 means totally match.
@@ -47,11 +47,14 @@ def dice_soft(y_true, y_pred, loss_type='sorensen', axis=[1, 2, 3], smooth=1e-5,
     - `Wiki-Dice <https://en.wikipedia.org/wiki/Sørensen–Dice_coefficient>`_
     """
 
-    if not from_logits:
-        # transform back to logits
-        _epsilon = tf.convert_to_tensor(1e-7, y_pred.dtype.base_dtype)
-        y_pred = tf.clip_by_value(y_pred, _epsilon, 1 - _epsilon)
-        y_pred = tf.log(y_pred / (1 - y_pred))
+    # if not from_logits:
+    #     # transform back to logits
+    #     _epsilon = tf.convert_to_tensor(1e-7, y_pred.dtype.base_dtype)
+    #     y_pred = tf.clip_by_value(y_pred, _epsilon, 1 - _epsilon)
+    #     y_pred = tf.log(y_pred / (1 - y_pred))
+    # n_labels = y_true.get_shape()[3]
+    n_labels = tf.shape(y_true)[3]
+    y_pred = K.one_hot(K.argmax(y_pred, axis=-1), n_labels)
 
     inse = tf.reduce_sum(y_pred * y_true, axis=axis)
     if loss_type == 'jaccard':
@@ -62,18 +65,12 @@ def dice_soft(y_true, y_pred, loss_type='sorensen', axis=[1, 2, 3], smooth=1e-5,
         r = tf.reduce_sum(y_true, axis=axis)
     else:
         raise Exception("Unknow loss_type")
-    ## old axis=[0,1,2,3]
-    # dice = 2 * (inse) / (l + r)
-    # epsilon = 1e-5
-    # dice = tf.clip_by_value(dice, 0, 1.0-epsilon) # if all empty, dice = 1
-    ## new haodong
     dice = (2. * inse + smooth) / (l + r + smooth)
-    ##
     dice = tf.reduce_mean(dice)
     return dice
 
 
-def dice_hard(y_true, y_pred, threshold=0.5, axis=[1, 2, 3], smooth=1e-5):
+def dice_hard(y_true, y_pred, threshold=0.5, axis=(0, 1, 2), smooth=1e-5):
     """Non-differentiable Sørensen–Dice coefficient for comparing the similarity
     of two batch of data, usually be used for binary image segmentation i.e. labels are binary.
     The coefficient between 0 to 1, 1 if totally match.
@@ -100,13 +97,7 @@ def dice_hard(y_true, y_pred, threshold=0.5, axis=[1, 2, 3], smooth=1e-5):
     inse = tf.reduce_sum(tf.multiply(y_pred, y_true), axis=axis)
     l = tf.reduce_sum(y_pred, axis=axis)
     r = tf.reduce_sum(y_true, axis=axis)
-    ## old axis=[0,1,2,3]
-    # hard_dice = 2 * (inse) / (l + r)
-    # epsilon = 1e-5
-    # hard_dice = tf.clip_by_value(hard_dice, 0, 1.0-epsilon)
-    ## new haodong
     hard_dice = (2. * inse + smooth) / (l + r + smooth)
-    ##
     hard_dice = tf.reduce_mean(hard_dice)
     return hard_dice
 
@@ -275,18 +266,53 @@ def weighted_mse_loss(weight=-1):
     return weighted_mse
 
 
-def spread_loss(labels, logits, m_low=0.2, m_hight=0.9, iteration_low_to_high=100000, global_step=100000):
-    m = m_low + (m_hight - m_low) * tf.minimum(tf.cast(global_step / iteration_low_to_high, dtype=tf.float32),
-                                               tf.cast(1, dtype=tf.float32))
-    n_labels = labels.get_shape()[1]
-    labels = tf.transpose(labels, (1, 0, 2, 3))
-    logits = tf.transpose(logits, (1, 0, 2, 3))
-    labels = tf.reshape(labels, [n_labels, -1])
-    logits = tf.reshape(logits, [n_labels, -1])
+def spread_loss(m_low=0.2, m_high=0.9, epochs=20, epoch_step=20):
+    def loss_fun(labels, logits):
+        n_labels = tf.shape(labels)[3]
+        m = m_low + (m_high - m_low) * tf.minimum(tf.cast(epoch_step / epochs, dtype=tf.float32),
+                                                  tf.cast(1, dtype=tf.float32))
+        # n_labels = labels.get_shape()[3]
+        labels = tf.transpose(labels, (3, 0, 1, 2))
+        logits = tf.transpose(logits, (3, 0, 1, 2))
+        labels = tf.reshape(labels, [n_labels, -1])
+        logits = tf.reshape(logits, [n_labels, -1])
 
-    true_class_logits = tf.reduce_max(labels * logits, axis=0)
-    margin_loss_pixel_class = tf.square(tf.nn.relu((m - true_class_logits + logits) * (1 - labels)))
+        true_class_logits = tf.reduce_max(labels * logits, axis=0)
+        margin_loss_pixel_class = tf.square(tf.nn.relu((m - true_class_logits + logits) * (1 - labels)))
 
-    loss = tf.reduce_mean(tf.reduce_sum(margin_loss_pixel_class, axis=0))
+        loss = tf.reduce_mean(tf.reduce_sum(margin_loss_pixel_class, axis=0))
 
-    return loss
+        return loss
+
+    return loss_fun
+
+
+def weighted_spread_loss(weights=None, m_low=0.2, m_high=0.9, epochs=20, epoch_step=20):
+    def loss_fun(labels, logits):
+        # w_l = np.array([0.00705479, 0.03312549, 0.02664785, 0.4437354, 0.44254721, 0.04688926]) * 6
+        n_labels = tf.shape(labels)[3]
+        m = m_low + (m_high - m_low) * tf.minimum(tf.cast(epoch_step / epochs, dtype=tf.float32),
+                                                  tf.cast(1, dtype=tf.float32))
+        # n_labels = labels.get_shape()[3]
+        labels = tf.transpose(labels, (3, 0, 1, 2))
+        logits = tf.transpose(logits, (3, 0, 1, 2))
+        labels = tf.reshape(labels, [n_labels, -1])
+        logits = tf.reshape(logits, [n_labels, -1])
+
+        true_class_logits = tf.reduce_max(labels * logits, axis=0)
+        margin_loss_pixel_class = tf.square(tf.nn.relu((m - true_class_logits + logits) * (1 - labels)))
+
+        margin_loss_pixel_class = tf.transpose(margin_loss_pixel_class, (1, 0))
+        if weights is not None:
+            margin_loss_pixel_class = weights * margin_loss_pixel_class
+
+        loss = tf.reduce_mean(tf.reduce_sum(margin_loss_pixel_class, axis=1))
+
+        return loss
+
+    return loss_fun
+
+
+# def spread_loss(m_low=0.2, m_high=0.9, epochs=20, epoch_step=20):
+#     return weighted_spread_loss(m_low=m_low, m_high=m_high, epochs=epochs, epoch_step=epoch_step)
+

@@ -3,5 +3,7 @@ datasets/JSRT/All247images
 datasets/JSRT/scratch
 datasets/Retouch/Cirrus
 datasets/Retouch/Spectralis
+datasets/Layers/train
+datasets/Layers/test
 .*
 !/.gitignore

@@ -35,22 +35,29 @@ def main(args):
     experiment = Experiment(project_name="general", workspace="simek13")
 
     # Load the training, validation, and testing data
-    dataset = Dataset(args.data_root_dir, '.png')
+    if args.data_root_dir.find('Layers') != -1:
+        dataset = Dataset(args.data_root_dir, mask_ext='.tif')
+    else:
+        dataset = Dataset(args.data_root_dir)
     data = dataset.load_data()
     train_list, val_list = train_test_split(data, test_size=0.1)
 
     # Get image properties from first image. Assume they are all the same.
     img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'images', data[0][0]))).shape
-    net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 8), 1)
+    if args.data_root_dir.find('Spectralis') != -1:
+        net_input_shape = (int(img_shape[0] / 4), int(img_shape[1] / 4), 1)
+    elif args.data_root_dir.find('Layers') != -1:
+        net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 4), 1)
+    else:
+        net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 8), 1)
 
     # Create the model for training/testing/manipulation
     model_list = create_model(args=args, input_shape=net_input_shape)
     model_list[0].summary()
 
-    args.output_name = 'split-' + str(args.split_num) + '_batch-' + str(args.batch_size) + \
-                       '_shuff-' + str(args.shuffle_data) + '_aug-' + str(args.aug_data) + \
-                       '_loss-' + str(args.loss) + '_slic-' + str(args.slices) + \
-                       '_sub-' + str(args.subsamp) + '_strid-' + str(args.stride) + \
+    args.output_name = 'batch-' + str(args.batch_size) + '_shuff-' + str(args.shuffle_data) + \
+                       '_aug-' + str(args.aug_data) + \
+                       '_loss-' + str(args.loss) + '_strid-' + str(args.stride) + \
                        '_lr-' + str(args.initial_lr) + '_recon-' + str(args.recon_wei)
     args.time = time
 
@@ -124,10 +131,11 @@ if __name__ == '__main__':
     parser.add_argument('--aug_data', type=int, default=1, choices=[0, 1],
                         help='Whether or not to use data augmentation during training.')
     parser.add_argument('--loss', type=str.lower, default='w_bce',
-                        choices=['bce', 'w_bce', 'dice', 'mar', 'w_mar', 'cce', 'scce'],
+                        choices=['bce', 'w_bce', 'dice', 'mar', 'w_mar', 'cce', 'scce', 'spread', 'w_spread'],
                         help='Which loss to use. "bce" and "w_bce": unweighted and weighted binary cross entropy'
                              '"dice": soft dice coefficient, "mar" and "w_mar": unweighted and weighted margin loss, '
-                             '"cce": categorical cross entropy, "scce": sparse categorical cross entropy.')
+                             '"cce": categorical cross entropy, "scce": sparse categorical cross entropy'
+                             ', "spread": spread loss, "w_spread": weighted spread loss.')
     parser.add_argument('--batch_size', type=int, default=1,
                         help='Batch size for training/testing.')
     parser.add_argument('--initial_lr', type=float, default=0.0001,

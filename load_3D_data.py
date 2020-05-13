@@ -25,6 +25,8 @@ from tqdm import tqdm
 
 import matplotlib
 
+from preprocessing.intensity import normalize_robust
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -156,8 +158,10 @@ def convert_data_to_numpy(root_path, img_name, net_input_shape, no_masks=False, 
         img = np.array(Image.open(join(img_path, img_name)).convert('L').resize((net_input_shape[1],
                                                                                  net_input_shape[0])),
                        dtype=np.float64)
-        img -= 127.5
-        img /= 127.5
+        img = normalize_robust(img)
+        img = np.clip(img, -1.0, 1.0)
+        # img -= 127.5
+        # img /= 127.5
         # print('Min: {}  Max: {}'.format(np.amin(img), np.amax(img)))
         # img = np.array(Image.open(join(img_path, img_name)).resize((net_input_shape[1], net_input_shape[0])),
         #                dtype=np.uint8)
@@ -226,33 +230,34 @@ def augmentImages(batch_of_images, batch_of_masks):
             orig_shape = img_and_mask.shape
             img_and_mask = img_and_mask.reshape((img_and_mask.shape[0:3]))
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = random_rotation(img_and_mask, rg=20, row_axis=0, col_axis=1, channel_axis=2,
-                                           fill_mode='constant', cval=0.)
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = random_shift(img_and_mask, wrg=0.2, hrg=0.2, row_axis=0, col_axis=1, channel_axis=2,
+        #                                 fill_mode='constant', cval=0.)
 
-        # if np.random.randint(0, 5) == 3:
-        #     img_and_mask = elastic_transform(img_and_mask, alpha=1000, sigma=80, alpha_affine=50)
+        # if np.random.randint(0, 10) == 7:
+        # img_and_mask = random_rotation(img_and_mask, rg=20, row_axis=0, col_axis=1, channel_axis=2,
+        #                                fill_mode='constant', cval=0.)
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = random_shift(img_and_mask, wrg=0.2, hrg=0.2, row_axis=0, col_axis=1, channel_axis=2,
-                                        fill_mode='constant', cval=0.)
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = random_zoom(img_and_mask, zoom_range=(0.75, 0.75), row_axis=0, col_axis=1,
+        #                                channel_axis=2,
+        #                                fill_mode='constant', cval=0.)
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = random_shear(img_and_mask, intensity=16, row_axis=0, col_axis=1, channel_axis=2,
-                                        fill_mode='constant', cval=0.)
+        if np.random.randint(0, 5) == 3:
+            img_and_mask = elastic_transform(img_and_mask, alpha=1000, sigma=80, alpha_affine=50)
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = random_zoom(img_and_mask, zoom_range=(0.75, 0.75), row_axis=0, col_axis=1, channel_axis=2,
-                                       fill_mode='constant', cval=0.)
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = random_shear(img_and_mask, intensity=16, row_axis=0, col_axis=1, channel_axis=2,
+        #                                 fill_mode='constant', cval=0.)
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = flip_axis(img_and_mask, axis=1)
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = flip_axis(img_and_mask, axis=1)
 
-        if np.random.randint(0, 10) == 7:
-            img_and_mask = flip_axis(img_and_mask, axis=0)
+        # if np.random.randint(0, 10) == 7:
+        #     img_and_mask = flip_axis(img_and_mask, axis=0)
 
-        if np.random.randint(0, 10) == 7:
-            salt_pepper_noise(img_and_mask, salt=0.2, amount=0.04)
+        # if np.random.randint(0, 10) == 7:
+        #     salt_pepper_noise(img_and_mask, salt=0.2, amount=0.04)
 
         if batch_of_images.ndim == 4:
             batch_of_images[i, ...] = img_and_mask[..., 0:img_and_mask.shape[2] // 2]
@@ -343,7 +348,7 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batch_si
                     plt.savefig(join(root_path, 'logs', scan_name), format='png', bbox_inches='tight')
                     plt.close()
 
-                mask_batch_hot = to_one_hot(mask_batch)
+                mask_batch_hot = to_one_hot(mask_batch, num_labels(root_path))
                 # mask = mask_batch.squeeze(axis=-1)
                 # mask_batch_hot = np.zeros((batch_size, train_mask.shape[0], train_mask.shape[1], 4))
                 # mask_batch_hot[mask == 0, 0] = 1
@@ -404,7 +409,7 @@ def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1
             if count % batch_size == 0:
                 count = 0
 
-                mask_batch_hot = to_one_hot(mask_batch)
+                mask_batch_hot = to_one_hot(mask_batch, num_labels(root_path))
                 # mask = mask_batch.squeeze(axis=-1)
                 # mask_batch_hot = np.zeros((batch_size, val_mask.shape[0], val_mask.shape[1], 4))
                 # mask_batch_hot[mask == 0, 0] = 1
@@ -459,8 +464,15 @@ def generate_test_batches(root_path, test_list, net_input_shape, batch_size=1):
         yield (img_batch[:count, :, :, :])
 
 
-def to_one_hot(values):
+def num_labels(root_path):
+    if any(x in root_path for x in ['Spectralis', 'Cirrus', 'Layers']):
+        return 4
+    else:
+        return 6
+
+
+def to_one_hot(values, n_labels):
     if values.ndim == 4:
         values = values.squeeze(axis=-1)
-    n_values = 6
-    return np.eye(n_values)[values]
+    return np.eye(n_labels)[values]
+

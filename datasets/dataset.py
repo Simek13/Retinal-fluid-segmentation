@@ -4,7 +4,7 @@ from os import listdir
 
 class Dataset:
 
-    def __init__(self, root_path, mask_ext):
+    def __init__(self, root_path, mask_ext='.png'):
         self.root_path = root_path
         self.mask_ext = mask_ext
 
