@@ -306,7 +306,8 @@ def weighted_spread_loss(weights=None, m_low=0.2, m_high=0.9, epochs=20, epoch_s
         if weights is not None:
             margin_loss_pixel_class = weights * margin_loss_pixel_class
 
-        loss = tf.reduce_mean(tf.reduce_sum(margin_loss_pixel_class, axis=1))
+        # loss = tf.reduce_mean(tf.reduce_sum(margin_loss_pixel_class, axis=1))
+        loss = tf.reduce_sum(tf.reduce_mean(margin_loss_pixel_class, axis=0))
 
         return loss
 

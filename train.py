@@ -70,7 +70,7 @@ def get_loss(root, split, net, recon_wei, choice):
         loss = spread_loss(epoch_step=EpochCounter.counter)
     elif choice == 'w_spread':
         if 'Spectralis' in root:
-            weights = np.array(S_PRESENCES)
+            weights = np.array(S_PIXELS)
         else:
             weights = np.array(C_PRESENCE)
         loss = weighted_spread_loss(weights=weights, epoch_step=EpochCounter.counter)
@@ -207,28 +207,15 @@ def train(args, train_list, val_list, u_model, net_input_shape):
     # Set the callbacks
     callbacks = get_callbacks(args)
 
-    if args.data_root_dir.find('Spectralis') != -1:
-        steps_per_epoch = 1058
-        validation_steps = 118
-    elif args.data_root_dir.find('JSRT') != -1:
-        steps_per_epoch = 221
-        validation_steps = 25
-    elif args.data_root_dir.find('Layers') != -1:
-        steps_per_epoch = 1304
-        validation_steps = 145
-    else:
-        steps_per_epoch = 1304
-        validation_steps = 145
-
     # Training the network
     history = model.fit(
         generate_train_batches(args.data_root_dir, train_list, net_input_shape, net=args.net,
                                batch_size=args.batch_size, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
-        steps_per_epoch=steps_per_epoch,
+        steps_per_epoch=len(train_list),
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batch_size=args.batch_size, shuff=args.shuffle_data),
-        validation_steps=validation_steps,  # Set validation stride larger to see more of the data.
+        validation_steps=len(val_list),  # Set validation stride larger to see more of the data.
         epochs=20,
         callbacks=callbacks,
         verbose=1)

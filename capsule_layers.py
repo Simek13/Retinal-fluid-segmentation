@@ -52,8 +52,8 @@ class DualLength(layers.Layer):
         x = tf.transpose(inputs, (0, 3, 4, 1, 2))
         x_mat, x_mat2 = tf.split(x, [np.product(self.pos_dim), np.product(self.app_dim)], axis=-1)
         pred = tf.norm(x_mat, axis=-1) * tf.norm(x_mat2, axis=-1)
-        # return pred
-        return softmax(pred, axis=-1)
+        return pred
+        # return softmax(pred, axis=-1)
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0],) + input_shape[3:] + (input_shape[1],)
