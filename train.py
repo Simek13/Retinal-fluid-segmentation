@@ -11,6 +11,7 @@ This file is used for training models. Please see the README for details about t
 from __future__ import print_function
 
 import matplotlib
+from math import ceil
 from keras.callbacks import Callback
 
 matplotlib.use('Agg')
@@ -212,11 +213,11 @@ def train(args, train_list, val_list, u_model, net_input_shape):
         generate_train_batches(args.data_root_dir, train_list, net_input_shape, net=args.net,
                                batch_size=args.batch_size, shuff=args.shuffle_data, aug_data=args.aug_data),
         max_queue_size=40, workers=4, use_multiprocessing=False,
-        steps_per_epoch=len(train_list),
+        steps_per_epoch=ceil(len(train_list) / args.batch_size),
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batch_size=args.batch_size, shuff=args.shuffle_data),
-        validation_steps=len(val_list),  # Set validation stride larger to see more of the data.
-        epochs=20,
+        validation_steps=ceil(len(val_list) / args.batch_size),  # Set validation stride larger to see more of the data.
+        epochs=50,
         callbacks=callbacks,
         verbose=1)
 

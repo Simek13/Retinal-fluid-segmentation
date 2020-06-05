@@ -57,14 +57,16 @@ def dice_soft(y_true, y_pred, loss_type='sorensen', axis=(0, 1, 2), smooth=1e-5)
     y_pred = K.one_hot(K.argmax(y_pred, axis=-1), n_labels)
 
     inse = tf.reduce_sum(y_pred * y_true, axis=axis)
-    if loss_type == 'jaccard':
-        l = tf.reduce_sum(y_pred * y_pred, axis=axis)
-        r = tf.reduce_sum(y_true * y_true, axis=axis)
-    elif loss_type == 'sorensen':
-        l = tf.reduce_sum(y_pred, axis=axis)
-        r = tf.reduce_sum(y_true, axis=axis)
-    else:
-        raise Exception("Unknow loss_type")
+    # if loss_type == 'jaccard':
+    #     l = tf.reduce_sum(y_pred * y_pred, axis=axis)
+    #     r = tf.reduce_sum(y_true * y_true, axis=axis)
+    # elif loss_type == 'sorensen':
+    #     l = tf.reduce_sum(y_pred, axis=axis)
+    #     r = tf.reduce_sum(y_true, axis=axis)
+    # else:
+    #     raise Exception("Unknow loss_type")
+    l = tf.reduce_sum(y_pred, axis=axis)
+    r = tf.reduce_sum(y_true, axis=axis)
     dice = (2. * inse + smooth) / (l + r + smooth)
     dice = tf.reduce_mean(dice)
     return dice
@@ -266,7 +268,7 @@ def weighted_mse_loss(weight=-1):
     return weighted_mse
 
 
-def spread_loss(m_low=0.2, m_high=0.9, epochs=20, epoch_step=20):
+def spread_loss(m_low=0.2, m_high=0.9, epochs=50, epoch_step=50):
     def loss_fun(labels, logits):
         n_labels = tf.shape(labels)[3]
         m = m_low + (m_high - m_low) * tf.minimum(tf.cast(epoch_step / epochs, dtype=tf.float32),
