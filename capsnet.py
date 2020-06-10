@@ -198,11 +198,11 @@ def Matwo_CapsNet(input_shape, num_labels=6, routing_type='dual', routing=3,
 
     # 1/4
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                    num_capsule=int(level_caps[3]), kernel_size=4, name='caps_14_du1', coord_add=coord_add,
+                    num_capsule=int(level_caps[2]), kernel_size=4, name='caps_14_du1', coord_add=coord_add,
                     padding=padding, strides=2, op="deconv")(x)
     x = layers.Concatenate(axis=1, name='up_1')([x, skip3])
     x = Caps2dMatwo(routings=routing, routing_type=routing_type, pos_dim=pos_dim, app_dim=app_dim,
-                    num_capsule=int(level_caps[3]), kernel_size=5, name='caps_14_cu2', coord_add=coord_add,
+                    num_capsule=int(level_caps[2]), kernel_size=5, name='caps_14_cu2', coord_add=coord_add,
                     padding=padding, strides=1, op="conv")(x)
 
     # 1/2
@@ -228,10 +228,10 @@ def Matwo_CapsNet(input_shape, num_labels=6, routing_type='dual', routing=3,
 
     model = models.Model(inputs=input_tensor, outputs=prediction)
 
-    return model
+    return [model]
 
 
-def CapsNetR3(input_shape, n_class=4):
+def CapsNetR3(input_shape, n_class=6):
     x = layers.Input(shape=input_shape)
 
     # Layer 1: Just a conventional Conv2D layer
@@ -298,17 +298,17 @@ def CapsNetR3(input_shape, n_class=4):
     up_3 = layers.Concatenate(axis=-2, name='up_3')([deconv_cap_3_1, conv1_reshaped])
 
     # Layer 4: Convolutional Capsule: 1x1
-    seg_caps = ConvCapsuleLayer(kernel_size=1, num_capsule=4, num_atoms=16, strides=1, padding='same',
+    seg_caps = ConvCapsuleLayer(kernel_size=1, num_capsule=n_class, num_atoms=16, strides=1, padding='same',
                                 routings=3, name='seg_caps')(up_3)
 
     # Layer 4: This is an auxiliary layer to replace each capsule with its length. Just to match the true label's shape.
     out_seg = Length(num_classes=n_class, seg=True, name='out_seg')(seg_caps)
 
     # Decoder network.
-    _, H, W, C, A = seg_caps.get_shape()
-    y = layers.Input(shape=input_shape[:-1] + (4,))
-    masked_by_y = Mask()([seg_caps, y])  # The true label is used to mask the output of capsule layer. For training
-    masked = Mask()(seg_caps)
+    # _, H, W, C, A = seg_caps.get_shape()
+    # y = layers.Input(shape=input_shape[:-1] + (4,))
+    # masked_by_y = Mask()([seg_caps, y])  # The true label is used to mask the output of capsule layer. For training
+    # masked = Mask()(seg_caps)
 
     def shared_decoder(mask_layer):
         # recon_remove_dim = layers.Reshape((H, W, A))(mask_layer)
@@ -351,19 +351,20 @@ def CapsNetR3(input_shape, n_class=4):
 
     # masked_by_y = Mask()([shared_decoder(seg_caps), y])  # The true label is used to mask the output of capsule layer. For training
     # masked = Mask()(shared_decoder(seg_caps))  # Mask using the capsule with maximal length. For prediction
-    masked_by_y_dec = shared_decoder(masked_by_y)
-
-    masked_by_y_dec0 = layers.Lambda(lambda x: x[:, :, :, 0], name='recon0')(masked_by_y_dec)
-    masked_by_y_dec1 = layers.Lambda(lambda x: x[:, :, :, 1], name='recon1')(masked_by_y_dec)
-    masked_by_y_dec2 = layers.Lambda(lambda x: x[:, :, :, 2], name='recon2')(masked_by_y_dec)
-    masked_by_y_dec3 = layers.Lambda(lambda x: x[:, :, :, 3], name='recon3')(masked_by_y_dec)
+    # masked_by_y_dec = shared_decoder(masked_by_y)
+    #
+    # masked_by_y_dec0 = layers.Lambda(lambda x: x[:, :, :, 0], name='recon0')(masked_by_y_dec)
+    # masked_by_y_dec1 = layers.Lambda(lambda x: x[:, :, :, 1], name='recon1')(masked_by_y_dec)
+    # masked_by_y_dec2 = layers.Lambda(lambda x: x[:, :, :, 2], name='recon2')(masked_by_y_dec)
+    # masked_by_y_dec3 = layers.Lambda(lambda x: x[:, :, :, 3], name='recon3')(masked_by_y_dec)
 
     # Models for training and evaluation (prediction)
-    train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y_dec0, masked_by_y_dec1, masked_by_y_dec2,
-                                                       masked_by_y_dec3])
+    # train_model = models.Model(inputs=[x, y], outputs=[out_seg, masked_by_y_dec0, masked_by_y_dec1, masked_by_y_dec2,
+    #                                                    masked_by_y_dec3])
+    train_model = models.Model(inputs=x, outputs=out_seg)
     # train_model = models.Model(inputs=x, outputs=out_seg)
     # eval_model = models.Model(inputs=x, outputs=[out_seg, shared_decoder(masked)])
-    eval_model = models.Model(inputs=x, outputs=out_seg)
+    # eval_model = models.Model(inputs=x, outputs=out_seg)
 
     # manipulate model
     # noise = layers.Input(shape=((H, W, C, A)))
@@ -371,7 +372,8 @@ def CapsNetR3(input_shape, n_class=4):
     # masked_noised_y = Mask()([noised_seg_caps, y])
     # manipulate_model = models.Model(inputs=[x, y, noise], outputs=shared_decoder(masked_noised_y))
 
-    return train_model, eval_model
+    # return train_model, eval_model
+    return [train_model]
 
 
 def CapsNetR1(input_shape, n_class=2):

@@ -22,6 +22,7 @@ from time import gmtime, strftime
 from sklearn.model_selection import KFold, train_test_split
 
 from datasets.dataset import Dataset
+from datasets.imbalanced_dataset import ImbalancedDataset
 
 time = strftime("%Y-%m-%d-%H:%M:%S", gmtime())
 
@@ -37,6 +38,8 @@ def main(args):
     # Load the training, validation, and testing data
     if args.data_root_dir.find('Layers') != -1:
         dataset = Dataset(args.data_root_dir, mask_ext='.tif')
+    elif any(x in args.data_root_dir for x in ['Spectralis', 'Cirrus']):
+        dataset = ImbalancedDataset(args.data_root_dir)
     else:
         dataset = Dataset(args.data_root_dir)
     data = dataset.load_data()
@@ -46,7 +49,7 @@ def main(args):
     img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'images', data[0][0]))).shape
     if args.data_root_dir.find('Spectralis') != -1:
         net_input_shape = (int(img_shape[0] / 4), int(img_shape[1] / 4), 1)
-    elif args.data_root_dir.find('Layers') != -1:
+    elif any(x in args.data_root_dir for x in ['Layers', 'Cirrus']):
         net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 4), 1)
     else:
         net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 8), 1)
@@ -111,26 +114,26 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train on Medical Data')
-    parser.add_argument('--data_root_dir', type=str, required=True,
+    parser.add_argument('--data_root_dir', type=str, default='datasets/JSRT',
                         help='The root directory for your data.')
     parser.add_argument('--weights_path', type=str, default='',
                         help='/path/to/trained_model.hdf5 from root. Set to "" for none.')
     parser.add_argument('--split_num', type=int, default=0,
                         help='Which training split to train/test on.')
-    parser.add_argument('--net', type=str.lower, default='segcapsr3',
+    parser.add_argument('--net', type=str.lower, default='matwo',
                         choices=['segcapsr3', 'segcapsr1', 'segcapsbasic', 'unet', 'tiramisu', 'matwo'],
                         help='Choose your network.')
     parser.add_argument('--train', type=int, default=1, choices=[0, 1],
                         help='Set to 1 to enable training.')
     parser.add_argument('--test', type=int, default=1, choices=[0, 1],
                         help='Set to 1 to enable testing.')
-    parser.add_argument('--manip', type=int, default=1, choices=[0, 1],
+    parser.add_argument('--manip', type=int, default=0, choices=[0, 1],
                         help='Set to 1 to enable manipulation.')
     parser.add_argument('--shuffle_data', type=int, default=1, choices=[0, 1],
                         help='Whether or not to shuffle the training data (both per epoch and in slice order.')
     parser.add_argument('--aug_data', type=int, default=1, choices=[0, 1],
                         help='Whether or not to use data augmentation during training.')
-    parser.add_argument('--loss', type=str.lower, default='w_bce',
+    parser.add_argument('--loss', type=str.lower, default='spread',
                         choices=['bce', 'w_bce', 'dice', 'mar', 'w_mar', 'cce', 'scce', 'spread', 'w_spread'],
                         help='Which loss to use. "bce" and "w_bce": unweighted and weighted binary cross entropy'
                              '"dice": soft dice coefficient, "mar" and "w_mar": unweighted and weighted margin loss, '

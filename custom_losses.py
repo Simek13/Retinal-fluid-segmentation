@@ -14,6 +14,33 @@ from keras import backend as K
 import numpy as np
 import itertools
 
+def dice_metric(y_true, y_pred, axis=[1, 2], smooth=1e-7):
+    #inse = K.sum(y_pred * y_true, axis=axis)
+    #l = K.sum(y_pred, axis=axis)
+    #r = K.sum(y_true, axis=axis)
+    y_pred = K.argmax(y_pred, axis=-1)
+    y_true = K.argmax(y_true, axis=-1)
+    dice_avg = 0
+    for cl in range(1,4): #ignore background
+        pred_cl = K.equal(y_pred, cl)
+        true_cl = K.equal(y_true, cl)
+        pred_cl = K.cast(pred_cl, dtype='float16')
+        true_cl = K.cast(true_cl, dtype='float16')
+        inse = K.sum(pred_cl*true_cl, axis=[1, 2])
+        l = K.sum(pred_cl, axis=[1, 2])
+        r = K.sum(true_cl, axis=[1, 2])
+        dice = (2. * inse + smooth) / (l + r + smooth)
+        dice = K.mean(dice, axis=0)
+        dice_avg = dice_avg + dice
+
+    dice_avg = dice_avg / 3
+
+   # dice = (2. * inse + smooth) / (l + r + smooth)
+   # dice = K.mean(dice, axis=-1)
+   # dice = K.mean(dice, axis=0)
+    return dice_avg
+
+
 
 def dice_soft(y_true, y_pred, loss_type='sorensen', axis=(0, 1, 2), smooth=1e-5):
     """Soft dice (Sørensen or Jaccard) coefficient for comparing the similarity
@@ -268,7 +295,7 @@ def weighted_mse_loss(weight=-1):
     return weighted_mse
 
 
-def spread_loss(m_low=0.2, m_high=0.9, epochs=50, epoch_step=50):
+def spread_loss(m_low=0.2, m_high=0.9, epochs=100, epoch_step=100):
     def loss_fun(labels, logits):
         n_labels = tf.shape(labels)[3]
         m = m_low + (m_high - m_low) * tf.minimum(tf.cast(epoch_step / epochs, dtype=tf.float32),
@@ -289,7 +316,7 @@ def spread_loss(m_low=0.2, m_high=0.9, epochs=50, epoch_step=50):
     return loss_fun
 
 
-def weighted_spread_loss(weights=None, m_low=0.2, m_high=0.9, epochs=20, epoch_step=20):
+def weighted_spread_loss(weights=None, m_low=0.2, m_high=0.9, epochs=50, epoch_step=50):
     def loss_fun(labels, logits):
         # w_l = np.array([0.00705479, 0.03312549, 0.02664785, 0.4437354, 0.44254721, 0.04688926]) * 6
         n_labels = tf.shape(labels)[3]

@@ -32,7 +32,7 @@ import tensorflow as tf
 
 from custom_losses import dice_hard, weighted_binary_crossentropy_loss, margin_loss, \
     WeightedCategoricalCrossEntropy, weighted_dice_coef, weighted_mse_loss, weighted_dice_loss, spread_loss, dice_soft, \
-    weighted_spread_loss
+    weighted_spread_loss, dice_metric
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
 # CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 0.003555870045612856, 1: 0.874566629820256, 2: 1.0, 3: 0.8723247732858718}
@@ -79,14 +79,14 @@ def get_loss(root, split, net, recon_wei, choice):
         raise Exception("Unknow loss_type")
 
     if net.find('caps') != -1:
-        return {'out_seg': loss, 'recon0': weighted_mse_loss(S_PIXEL_MSE[0]),
-                'recon1': weighted_mse_loss(S_PIXEL_MSE[1]),
-                'recon2': weighted_mse_loss(S_PIXEL_MSE[2]),
-                'recon3': weighted_mse_loss(S_PIXEL_MSE[3])}, {'out_seg': 1., 'recon0': recon_wei,
-                                                               'recon1': recon_wei,
-                                                               'recon2': recon_wei,
-                                                               'recon3': recon_wei}
-        # return {'out_seg': loss}, None
+        # return {'out_seg': loss, 'recon0': weighted_mse_loss(S_PIXEL_MSE[0]),
+        #         'recon1': weighted_mse_loss(S_PIXEL_MSE[1]),
+        #         'recon2': weighted_mse_loss(S_PIXEL_MSE[2]),
+        #         'recon3': weighted_mse_loss(S_PIXEL_MSE[3])}, {'out_seg': 1., 'recon0': recon_wei,
+        #                                                        'recon1': recon_wei,
+        #                                                        'recon2': recon_wei,
+        #                                                        'recon3': recon_wei}
+        return {'out_seg': loss}, None
     else:
         return loss, None
 
@@ -132,7 +132,7 @@ def compile_model(args, net_input_shape, uncomp_model):
     opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
         # metrics = {'out_seg': 'categorical_accuracy'}
-        metrics = {'out_seg': weighted_dice_coef(S_PRESENCE)}
+        metrics = {'out_seg': dice_soft}
     elif args.net == 'matwo':
         # metrics = ['categorical_accuracy']
         metrics = [dice_soft]
@@ -148,7 +148,7 @@ def compile_model(args, net_input_shape, uncomp_model):
         return uncomp_model
     # If using multiple GPUs
     else:
-        with tf.device("/cpu:0"):
+        with tf.device("/gpu:0"):
             uncomp_model.compile(optimizer=opt, loss=loss, loss_weights=loss_weighting, metrics=metrics)
             model = multi_gpu_model(uncomp_model, gpus=args.gpus)
             model.__setattr__('callback_model', uncomp_model)
@@ -212,12 +212,12 @@ def train(args, train_list, val_list, u_model, net_input_shape):
     history = model.fit(
         generate_train_batches(args.data_root_dir, train_list, net_input_shape, net=args.net,
                                batch_size=args.batch_size, shuff=args.shuffle_data, aug_data=args.aug_data),
-        max_queue_size=40, workers=4, use_multiprocessing=False,
+        max_queue_size=40, workers=0, use_multiprocessing=False,
         steps_per_epoch=ceil(len(train_list) / args.batch_size),
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batch_size=args.batch_size, shuff=args.shuffle_data),
         validation_steps=ceil(len(val_list) / args.batch_size),  # Set validation stride larger to see more of the data.
-        epochs=50,
+        epochs=100,
         callbacks=callbacks,
         verbose=1)
 
