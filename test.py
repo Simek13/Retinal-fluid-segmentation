@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 plt.ioff()
 
-from os.path import join, splitext
+from os.path import join
 from os import makedirs
 import csv
 import SimpleITK as sitk
@@ -25,13 +25,14 @@ from tqdm import tqdm
 import numpy as np
 import scipy.ndimage.morphology
 from skimage import measure, filters
-from metrics import dc, jc, assd, DiceMetric, JaccardMetric
-
+from metrics import assd, DiceMetric, JaccardMetric
+from load_3D_data import num_labels
+from scipy.special import softmax
 from keras import backend as K
 
 K.set_image_data_format('channels_last')
-from keras.utils import print_summary
 from PIL import Image
+from sklearn.metrics import roc_auc_score, roc_curve, auc
 
 from load_3D_data import generate_test_batches
 
@@ -103,10 +104,10 @@ def test(args, test_list, model_list, net_input_shape):
     # Set up placeholders
     outfile = ''
     if args.compute_dice:
-        dice_arr = np.zeros((len(test_list)))
+        dice_arr = []
         outfile += 'dice_'
     if args.compute_jaccard:
-        jacc_arr = np.zeros((len(test_list)))
+        jacc_arr = []
         outfile += 'jacc_'
     if args.compute_assd:
         assd_arr = np.zeros((len(test_list)))
@@ -128,6 +129,12 @@ def test(args, test_list, model_list, net_input_shape):
 
         writer.writerow(row)
 
+        num_l = num_labels(args.data_root_dir)
+        label_stats = {i: [] for i in range(num_l)}
+        prediction_scores = {i: [] for i in range(num_l)}
+        # labels = []
+        # prediction_scores = []
+
         for i, img in enumerate(tqdm(test_list)):
             sitk_img = sitk.ReadImage(join(args.data_root_dir, 'images', img[0]))
             img_data = sitk.GetArrayFromImage(sitk_img)
@@ -146,7 +153,6 @@ def test(args, test_list, model_list, net_input_shape):
             else:
                 output = output_array[:, :, :, 0]
 
-            # output_img = sitk.GetImageFromArray(recon)
 
             print('Segmenting Output')
             shade_number = output.shape[-1]
@@ -157,24 +163,25 @@ def test(args, test_list, model_list, net_input_shape):
             for j, shade in enumerate(shades):
                 output_bin[output_bin == j] = int(shade)
             output_bin = output_bin.astype('uint8')
-            # output_bin = threshold_mask(output, args.thresh_level)
             output_mask = sitk.GetImageFromArray(output_bin)
 
-            # output_img.CopyInformation(sitk_img)
-            # output_mask.CopyInformation(sitk_img)
-
             print('Saving Output')
-            # sitk.WriteImage(output_img, join(raw_out_dir, img[0][:-4] + '_raw_output' + img[0][-4:]))
             sitk.WriteImage(output_mask, join(fin_out_dir, img[0][:-4] + '_final_output' + img[0][-4:]))
 
-            # Load gt mask
-            # sitk_mask = sitk.ReadImage(join(args.data_root_dir, 'masks', img[1]))
-            # gt_data = sitk.GetArrayFromImage(sitk_mask)
-            # mask_data_orig = np.array(Image.open(join(args.data_root_dir, 'masks', img[1])),
-            #                           dtype=np.uint8)
             mask_data = np.array(
                 Image.open(join(args.data_root_dir, 'masks', img[1])).resize((net_input_shape[1], net_input_shape[0])),
                 dtype=np.uint8)
+
+            output_array = softmax(output_array, axis=-1)
+            for j in range(shade_number):
+                y = np.zeros(mask_data.shape)
+                y[mask_data == j] = 1
+                label_stats[j].append(y.flatten())
+                score = output_array[..., j]
+                prediction_scores[j].append(score.flatten())
+
+            # labels.append(mask_data.flatten())
+            # prediction_scores.append(softmax(output_array, axis=-1).reshape(-1, output_array.shape[-1]))
 
             # Plot Qual Figure
             print('Creating Qualitative Figure for Quick Reference')
@@ -183,7 +190,6 @@ def test(args, test_list, model_list, net_input_shape):
             ax[0].imshow(img_data, alpha=1, cmap='gray')
             ax[1].imshow(output_bin, alpha=0.5, cmap='Blues')
             ax[2].imshow(mask_data, alpha=0.35, cmap='Oranges')
-            # ax[3].imshow(mask_data_orig, alpha=0.2, cmap='Reds')
 
             fig = plt.gcf()
             fig.suptitle(img[0][:-4])
@@ -196,13 +202,13 @@ def test(args, test_list, model_list, net_input_shape):
             if args.compute_dice:
                 print('Computing Dice')
                 dice = DiceMetric()
-                dice_arr[i] = dice(output, mask_data, range(shade_number))
+                dice_arr.append(np.stack(dice(output, mask_data, range(shade_number))))
                 print('\tDice: {}'.format(dice_arr[i]))
                 row.append(dice_arr[i])
             if args.compute_jaccard:
                 print('Computing Jaccard')
                 jaccard = JaccardMetric()
-                jacc_arr[i] = jaccard(output, mask_data, range(shade_number))
+                jacc_arr.append(np.stack(jaccard(output, mask_data, range(shade_number))))
                 print('\tJaccard: {}'.format(jacc_arr[i]))
                 row.append(jacc_arr[i])
             if args.compute_assd:
@@ -215,11 +221,31 @@ def test(args, test_list, model_list, net_input_shape):
 
         row = ['Average Scores']
         if args.compute_dice:
-            row.append(np.mean(dice_arr))
+            dice_arr = np.stack(dice_arr)
+            dice_mean = np.nanmean(dice_arr, axis=0)
+            row.append(dice_mean)
         if args.compute_jaccard:
-            row.append(np.mean(jacc_arr))
+            jacc_arr = np.stack(jacc_arr)
+            jacc_mean = np.mean(jacc_arr, axis=0)
+            row.append(jacc_mean)
         if args.compute_assd:
             row.append(np.mean(assd_arr))
+        writer.writerow(row)
+
+        auc_scores = []
+        for i in range(num_l):
+            labels = np.stack(label_stats[i]).flatten()
+            scores = np.stack(prediction_scores[i]).flatten()
+            fpr_rf, tpr_rf, thresholds_rf = roc_curve(labels, scores)
+            auc_rf = auc(fpr_rf, tpr_rf)
+            auc_scores.append(auc_rf)
+
+        # labels = np.stack(labels).flatten()
+        # prediction_scores = np.stack(prediction_scores).reshape(-1, output_array.shape[-1])
+        #
+        # roc_auc = roc_auc_score(labels, prediction_scores, multi_class='ovr')
+        print('AUC score: {}'.format(auc_scores))
+        row = ['AUC Scores', auc_scores]
         writer.writerow(row)
 
     print('Done.')

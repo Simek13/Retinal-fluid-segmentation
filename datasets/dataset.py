@@ -1,4 +1,4 @@
-from os.path import splitext
+from os.path import splitext, join
 from os import listdir
 
 
@@ -18,3 +18,26 @@ class Dataset:
             data.append((im, name + self.mask_ext))
 
         return data
+
+    def load_volumes(self):
+        train_path = self.root_path + '/train'
+        val_path = self.root_path + '/val'
+        test_path = self.root_path + '/test'
+
+        train_data = []
+        val_data = []
+        test_data = []
+
+        for v in listdir(train_path):
+            for im in listdir(join(train_path, v, 'images')):
+                name = splitext(im)[0]
+                train_data.append((v, im, name + self.mask_ext))
+        for v in listdir(val_path):
+            for im in listdir(join(val_path, v, 'images')):
+                name = splitext(im)[0]
+                val_data.append((v, im, name + self.mask_ext))
+        for v in listdir(test_path):
+            for im in listdir(join(test_path, v, 'images')):
+                name = splitext(im)[0]
+                test_data.append((v, im, name + self.mask_ext))
+        return train_data, val_data, test_data

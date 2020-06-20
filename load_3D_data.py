@@ -155,11 +155,13 @@ def convert_data_to_numpy(root_path, img_name, net_input_shape, no_masks=False, 
         # img = sitk.GetArrayFromImage(itk_img)
         # img = img.astype(np.float32)
 
-        # img = np.array(Image.open(join(img_path, img_name)).convert('L').resize((net_input_shape[1],
-        #                                                                          net_input_shape[0])),
-        #                dtype=np.float32)
+        img = np.array(Image.open(join(img_path, img_name)).convert('L').resize((net_input_shape[1],
+                                                                                 net_input_shape[0])),
+                       dtype=np.float32)
+        img = normalize_robust(img)
+        img = np.clip(img, -1.0, 1.0)
 
-        img = np.array(Image.open(join(img_path, img_name)), dtype=np.float32)
+        # img = np.array(Image.open(join(img_path, img_name)).convert('L'), dtype=np.float32)
         # img = img / 255
         # img -= 127.5
         # img /= 127.5
@@ -171,10 +173,10 @@ def convert_data_to_numpy(root_path, img_name, net_input_shape, no_masks=False, 
             # mask = sitk.GetArrayFromImage(itk_mask)
             # mask = mask.astype(np.uint8)
 
-            # mask = np.array(Image.open(join(mask_path, mask_name)).resize((net_input_shape[1],
-            #                                                                net_input_shape[0])),
-            #                 dtype=np.uint8)
-            mask = np.array(Image.open(join(mask_path, mask_name)), dtype=np.uint8)
+            mask = np.array(Image.open(join(mask_path, mask_name)).resize((net_input_shape[1],
+                                                                           net_input_shape[0])),
+                            dtype=np.uint8)
+            # mask = np.array(Image.open(join(mask_path, mask_name)), dtype=np.uint8)
 
         try:
 
@@ -311,33 +313,31 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batch_si
         count = 0
         for i, scan in enumerate(train_list):
             try:
-                scan_name = scan[0]
-                mask_name = scan[1]
+                scan_name = scan[1]
                 path_to_np = join(root_path, 'np_files', splitext(scan_name)[0] + '.npz')
                 with np.load(path_to_np) as data:
                     train_img = data['img']
                     train_mask = data['mask']
             except:
                 print('\nPre-made numpy array not found for {}.\nCreating now...'.format(splitext(scan_name)[0]))
-                train_img, train_mask = convert_data_to_numpy(root_path, scan_name, net_input_shape,
-                                                              mask_name=mask_name)
+                train_img, train_mask = convert_data_to_numpy(root_path, scan, net_input_shape)
                 if np.array_equal(train_img, np.zeros(1)):
                     continue
                 else:
                     print('\nFinished making npz file.')
 
-            if aug_data:
-                train_img, train_mask = sitk_augment(train_img, train_mask)
-            train_img = normalize_robust(train_img)
-            train_img = np.clip(train_img, -1.0, 1.0)
+            # if aug_data:
+            #     train_img, train_mask = sitk_augment(train_img, train_mask, net_input_shape)
+            # train_img = normalize_robust(train_img)
+            # train_img = np.clip(train_img, -1.0, 1.0)
             img_batch[count, :, :, 0] = train_img
             mask_batch[count, :, :, 0] = train_mask
 
             count += 1
             if count % batch_size == 0:
                 count = 0
-                # if aug_data:
-                #     img_batch, mask_batch = augmentImages(img_batch, mask_batch)
+                if aug_data:
+                    img_batch, mask_batch = augmentImages(img_batch, mask_batch)
 
                 # mask_batch = mask_batch.astype(np.uint8)
 
@@ -402,8 +402,8 @@ def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1
                 else:
                     print('\nFinished making npz file.')
 
-            val_img = normalize_robust(val_img)
-            val_img = np.clip(val_img, -1.0, 1.0)
+            # val_img = normalize_robust(val_img)
+            # val_img = np.clip(val_img, -1.0, 1.0)
             img_batch[count, :, :, 0] = val_img
             mask_batch[count, :, :, 0] = val_mask
 
@@ -455,8 +455,8 @@ def generate_test_batches(root_path, test_list, net_input_shape, batch_size=1):
             else:
                 print('\nFinished making npz file.')
 
-        test_img = normalize_robust(test_img)
-        test_img = np.clip(test_img, -1.0, 1.0)
+        # test_img = normalize_robust(test_img)
+        # test_img = np.clip(test_img, -1.0, 1.0)
         img_batch[count, :, :, 0] = test_img
 
         count += 1
@@ -481,7 +481,7 @@ def to_one_hot(values, n_labels):
     return np.eye(n_labels, dtype=np.float32)[values]
 
 
-def sitk_augment(image_arr, mask_arr):
+def sitk_augment(image_arr, mask_arr, net_input_shape):
     image = sitk.GetImageFromArray(image_arr)
     mask = sitk.GetImageFromArray(mask_arr)
     dim = 2
@@ -495,6 +495,10 @@ def sitk_augment(image_arr, mask_arr):
 
     # fit
     input_size = image_arr.shape[:2]
+    current_scale = [(input_size[i] / net_input_shape[i]) for i in range(dim)]
+    t = get_scale_transform(dim, current_scale)
+    image = resample(image, t)
+    mask = resample(mask, t)
 
     # random translation
     random_offset = [20, 20]
@@ -547,6 +551,7 @@ def sitk_augment(image_arr, mask_arr):
     mask = sitk.GetArrayFromImage(mask)
 
     return image, mask
+
 
 def get_translate_transform(dim, offset):
     assert len(offset) == dim

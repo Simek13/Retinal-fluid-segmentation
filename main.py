@@ -36,21 +36,19 @@ def main(args):
     experiment = Experiment(project_name="general", workspace="simek13")
 
     # Load the training, validation, and testing data
-    if args.data_root_dir.find('Layers') != -1:
-        dataset = Dataset(args.data_root_dir, mask_ext='.tif')
-    elif any(x in args.data_root_dir for x in ['Spectralis', 'Cirrus']):
-        dataset = ImbalancedDataset(args.data_root_dir)
+    dataset = Dataset(args.data_root_dir)
+    if any(x in args.data_root_dir for x in ['Spectralis', 'Cirrus']):
+        train_list, val_list, test_list = dataset.load_volumes()
+        # Get image properties from first image. Assume they are all the same.
+        img_shape = sitk.GetArrayFromImage(
+            sitk.ReadImage(join(args.data_root_dir, 'train', train_list[0][0], 'images', train_list[0][1]))).shape
     else:
-        dataset = Dataset(args.data_root_dir)
-    data = dataset.load_data()
-    train_list, val_list = train_test_split(data, test_size=0.1)
+        data = dataset.load_data()
+        train_list, val_list = train_test_split(data, test_size=0.2)
+        img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'images', data[0][0]))).shape
 
-    # Get image properties from first image. Assume they are all the same.
-    img_shape = sitk.GetArrayFromImage(sitk.ReadImage(join(args.data_root_dir, 'images', data[0][0]))).shape
-    if args.data_root_dir.find('Spectralis') != -1:
+    if any(x in args.data_root_dir for x in ['Spectralis', 'Cirrus']):
         net_input_shape = (int(img_shape[0] / 4), int(img_shape[1] / 4), 1)
-    elif any(x in args.data_root_dir for x in ['Layers', 'Cirrus']):
-        net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 4), 1)
     else:
         net_input_shape = (int(img_shape[0] / 8), int(img_shape[1] / 8), 1)
 
@@ -61,7 +59,7 @@ def main(args):
     args.output_name = 'batch-' + str(args.batch_size) + '_shuff-' + str(args.shuffle_data) + \
                        '_aug-' + str(args.aug_data) + \
                        '_loss-' + str(args.loss) + '_strid-' + str(args.stride) + \
-                       '_lr-' + str(args.initial_lr) + '_recon-' + str(args.recon_wei)
+                       '_lr-' + str(args.initial_lr)
     args.time = time
 
     args.check_dir = join(args.data_root_dir, 'saved_models', args.net)
@@ -104,7 +102,10 @@ def main(args):
     if args.test:
         from test import test
         # Run testing
-        test(args, val_list, model_list, net_input_shape)
+        if any(x in args.data_root_dir for x in ['Spectralis', 'Cirrus']):
+            test(args, test_list, model_list, net_input_shape)
+        else:
+            test(args, val_list, model_list, net_input_shape)
     #
     # if args.manip:
     #     from manip import manip
@@ -141,7 +142,7 @@ if __name__ == '__main__':
                              ', "spread": spread loss, "w_spread": weighted spread loss.')
     parser.add_argument('--batch_size', type=int, default=1,
                         help='Batch size for training/testing.')
-    parser.add_argument('--initial_lr', type=float, default=0.0001,
+    parser.add_argument('--initial_lr', type=float, default=0.001,
                         help='Initial learning rate for Adam.')
     parser.add_argument('--recon_wei', type=float, default=131.072,
                         help="If using capsnet: The coefficient (weighting) for the loss of decoder")

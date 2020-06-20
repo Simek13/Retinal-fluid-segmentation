@@ -25,7 +25,8 @@ class TpFpFnMetricBase():
             tp, fp, fn = self.calculate_tp_fp_fn(prediction, groundtruth, label)
             current_score = self.evaluate_function(tp, fp, fn)
             scores.append(current_score)
-        return np.nanmean(scores)
+        # return np.nanmean(scores)
+        return scores
 
     def __call__(self, prediction, groundtruth, labels):
         return self.calculate_tp_fp_fn_scores(prediction, groundtruth, labels)

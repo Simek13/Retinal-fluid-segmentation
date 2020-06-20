@@ -40,11 +40,13 @@ from load_3D_data import load_class_weights, generate_train_batches, generate_va
 # SPECTRALIS_PIXEL_CLASS_WEIGHTS = {0: 0.0031737332265260555, 1: 0.5547157937848298, 2: 0.5589333800101778, 3: 1.0}
 # SPECTRALIS_PRESENCE_CLASS_WEIGHTS = {0: 0.2568027210884354, 1: 0.6003976143141153, 2: 0.8908554572271387, 3: 1.0}
 C_PIXEL = (0.003555870045612856, 0.874566629820256, 1.0, 0.8723247732858718)
-C_PRESENCE = (0.20247395833333331, 0.6652406417112299, 0.8885714285714286, 1.0)
+C_PRESENCE = np.array([1., 0.15218099, 0.11393229, 0.10123698]) * 4
 S_PIXEL = (0.0031737332265260555, 0.5547157937848298, 0.5589333800101778, 1.0)
 S_PIXELS = (1., 0.00572137, 0.0056782,  0.00317373)
+S_PIXELS_BALANCED = np.array([1., 0.00955425, 0.00948216, 0.0052999]) * 4
 S_PRESENCE = (0.2568027210884354, 0.6003976143141153, 0.8908554572271387, 1.0)
 S_PRESENCES = (1., 0.42772109, 0.28826531, 0.25680272)
+S_PRESENCES_BALANCED = np.array([1., 0.70745429, 0.47679325, 0.42475387])
 S_PRESENCE_MSE = (1.0, 2.337972166998012, 3.4690265486725664, 3.8940397350993377)
 S_PIXEL_MSE = (0.014573297188993577, 176.3305415840263, 177.67881191975138, 318.6781911942668)
 CCE_WEIGHTS = (1.0, 174.78337156649349, 176.11227539183628, 315.08634425918416)
@@ -71,7 +73,7 @@ def get_loss(root, split, net, recon_wei, choice):
         loss = spread_loss(epoch_step=EpochCounter.counter)
     elif choice == 'w_spread':
         if 'Spectralis' in root:
-            weights = np.array(S_PIXELS)
+            weights = np.array(S_PRESENCES)
         else:
             weights = np.array(C_PRESENCE)
         loss = weighted_spread_loss(weights=weights, epoch_step=EpochCounter.counter)
@@ -117,11 +119,11 @@ def get_callbacks(arguments):
         monitor=monitor_name, save_best_only=True, save_weights_only=True,
         verbose=1, mode='max')
     lr_reducer = ReduceLROnPlateau(monitor=monitor_name, factor=0.05, cooldown=0, patience=5, verbose=1, mode='max')
-    early_stopper = EarlyStopping(monitor=monitor_name, min_delta=0, patience=25, verbose=0, mode='max')
+    # early_stopper = EarlyStopping(monitor=monitor_name, min_delta=0, patience=25, verbose=0, mode='max')
 
     epoch_counter = EpochCounter()
 
-    return [model_checkpoint, csv_logger, lr_reducer, early_stopper, tb, epoch_counter]
+    return [model_checkpoint, csv_logger, lr_reducer, tb, epoch_counter]
 
 
 def compile_model(args, net_input_shape, uncomp_model):
@@ -217,7 +219,7 @@ def train(args, train_list, val_list, u_model, net_input_shape):
         validation_data=generate_val_batches(args.data_root_dir, val_list, net_input_shape, net=args.net,
                                              batch_size=args.batch_size, shuff=args.shuffle_data),
         validation_steps=ceil(len(val_list) / args.batch_size),  # Set validation stride larger to see more of the data.
-        epochs=100,
+        epochs=50,
         callbacks=callbacks,
         verbose=1)
 
