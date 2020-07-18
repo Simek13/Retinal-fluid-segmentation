@@ -1,2 +1,2 @@
 # Retinal-fluid-segmentation
-Segmentation of retinal fluid images with Capsular neural networks
+Segmentation of retinal fluid images with Capsule neural networks
