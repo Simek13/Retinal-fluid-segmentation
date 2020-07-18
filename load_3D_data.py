@@ -30,6 +30,7 @@ from preprocessing.intensity import normalize_robust
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
+
 plt.ioff()
 
 from tensorflow.keras.preprocessing.image import *
@@ -128,11 +129,11 @@ def split_data(root_path, num_splits=4):
         n += 1
 
 
-def convert_data_to_numpy(root_path, img_name, net_input_shape, no_masks=False, mask_name='', overwrite=False):
-    fname = splitext(img_name)[0]
+def convert_data_to_numpy(root_path, scan, net_input_shape, group='train', no_masks=False, overwrite=False):
+    fname = splitext(scan[1])[0]
     numpy_path = join(root_path, 'np_files')
-    img_path = join(root_path, 'images')
-    mask_path = join(root_path, 'masks')
+    img_path = join(root_path, group, scan[0], 'images')
+    mask_path = join(root_path, group, scan[0], 'masks')
     fig_path = join(root_path, 'figs')
     try:
         mkdir(numpy_path)
@@ -155,8 +156,8 @@ def convert_data_to_numpy(root_path, img_name, net_input_shape, no_masks=False, 
         # img = sitk.GetArrayFromImage(itk_img)
         # img = img.astype(np.float32)
 
-        img = np.array(Image.open(join(img_path, img_name)).convert('L').resize((net_input_shape[1],
-                                                                                 net_input_shape[0])),
+        img = np.array(Image.open(join(img_path, scan[1])).convert('L').resize((net_input_shape[1],
+                                                                                net_input_shape[0]), Image.NEAREST),
                        dtype=np.float32)
         img = normalize_robust(img)
         img = np.clip(img, -1.0, 1.0)
@@ -167,14 +168,13 @@ def convert_data_to_numpy(root_path, img_name, net_input_shape, no_masks=False, 
         # img /= 127.5
         # print('Min: {}  Max: {}'.format(np.amin(img), np.amax(img)))
 
-
         if not no_masks:
             # itk_mask = sitk.ReadImage(join(mask_path, mask_name))
             # mask = sitk.GetArrayFromImage(itk_mask)
             # mask = mask.astype(np.uint8)
 
-            mask = np.array(Image.open(join(mask_path, mask_name)).resize((net_input_shape[1],
-                                                                           net_input_shape[0])),
+            mask = np.array(Image.open(join(mask_path, scan[2])).resize((net_input_shape[1],
+                                                                         net_input_shape[0]), Image.NEAREST),
                             dtype=np.uint8)
             # mask = np.array(Image.open(join(mask_path, mask_name)), dtype=np.uint8)
 
@@ -301,7 +301,7 @@ def threadsafe_generator(f):
     return g
 
 
-#@threadsafe_generator
+# @threadsafe_generator
 def generate_train_batches(root_path, train_list, net_input_shape, net, batch_size=1, shuff=True, aug_data=False):
     # Create placeholders for training
     img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
@@ -376,7 +376,7 @@ def generate_train_batches(root_path, train_list, net_input_shape, net, batch_si
                 yield (img_batch[:count, ...], mask_batch[:count, ...])
 
 
-#@threadsafe_generator
+# @threadsafe_generator
 def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1, shuff=1):
     # Create placeholders for validation
     img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
@@ -388,15 +388,14 @@ def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1
         count = 0
         for i, scan in enumerate(val_list):
             try:
-                scan_name = scan[0]
-                mask_name = scan[1]
+                scan_name = scan[1]
                 path_to_np = join(root_path, 'np_files', splitext(scan_name)[0] + 'npz')
                 with np.load(path_to_np) as data:
                     val_img = data['img']
                     val_mask = data['mask']
             except:
                 print('\nPre-made numpy array not found for {}.\nCreating now...'.format(splitext(scan_name)[0]))
-                val_img, val_mask = convert_data_to_numpy(root_path, scan_name, net_input_shape, mask_name=mask_name)
+                val_img, val_mask = convert_data_to_numpy(root_path, scan, net_input_shape, group='val')
                 if np.array_equal(val_img, np.zeros(1)):
                     continue
                 else:
@@ -436,20 +435,20 @@ def generate_val_batches(root_path, val_list, net_input_shape, net, batch_size=1
                 yield (img_batch[:count, ...], mask_batch[:count, ...])
 
 
-#@threadsafe_generator
+# @threadsafe_generator
 def generate_test_batches(root_path, test_list, net_input_shape, batch_size=1):
     # Create placeholders for testing
     img_batch = np.zeros((np.concatenate(((batch_size,), net_input_shape))), dtype=np.float32)
     count = 0
-    for i, scan_name in enumerate(test_list):
+    for i, scan in enumerate(test_list):
         try:
-            scan_name = scan_name[0]
+            scan_name = scan[1]
             path_to_np = join(root_path, 'np_files', basename(scan_name)[:-3] + 'npz')
             with np.load(path_to_np) as data:
                 test_img = data['img']
         except:
             print('\nPre-made numpy array not found for {}.\nCreating now...'.format(scan_name[:-4]))
-            test_img = convert_data_to_numpy(root_path, scan_name, net_input_shape, no_masks=True)
+            test_img = convert_data_to_numpy(root_path, scan, net_input_shape, group='test', no_masks=True)
             if np.array_equal(test_img, np.zeros(1)):
                 continue
             else:

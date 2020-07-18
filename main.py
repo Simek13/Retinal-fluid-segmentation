@@ -90,15 +90,6 @@ def main(args):
         from train import train
         # Run training
         train(args, train_list, val_list, model_list[0], net_input_shape)
-        # if args.kfold:
-        # kfold = KFold(args.splits, True)
-        # for train_list, val_list in kfold.split(data):
-        # weights = model_list[0].get_weights()
-        # model_list[0].set_weights(weights)
-        # else:
-        #     train_list, val_list = train_test_split(data, test_size=0.1)
-        #     train(args, train_list, val_list, model_list[0], net_input_shape)
-
     if args.test:
         from test import test
         # Run testing
@@ -106,11 +97,6 @@ def main(args):
             test(args, test_list, model_list, net_input_shape)
         else:
             test(args, val_list, model_list, net_input_shape)
-    #
-    # if args.manip:
-    #     from manip import manip
-    #     # Run manipulation of segcaps
-    #     manip(args, test_list, model_list, net_input_shape)
 
 
 if __name__ == '__main__':
@@ -169,7 +155,7 @@ if __name__ == '__main__':
                         help='0 or 1')
     parser.add_argument('--compute_assd', type=int, default=0,
                         help='0 or 1')
-    parser.add_argument('--which_gpus', type=str, default="0",
+    parser.add_argument('--which_gpus', type=str, default="1",
                         help='Enter "-2" for CPU only, "-1" for all GPUs available, '
                              'or a comma separated list of GPU id numbers ex: "0,1,4".')
     parser.add_argument('--gpus', type=int, default=-1,

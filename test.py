@@ -103,15 +103,10 @@ def test(args, test_list, model_list, net_input_shape):
     eval_model.summary()
     # Set up placeholders
     outfile = ''
-    if args.compute_dice:
-        dice_arr = []
-        outfile += 'dice_'
-    if args.compute_jaccard:
-        jacc_arr = []
-        outfile += 'jacc_'
-    if args.compute_assd:
-        assd_arr = np.zeros((len(test_list)))
-        outfile += 'assd_'
+    dice_arr = {}
+    outfile += 'dice_'
+    jacc_arr = {}
+    outfile += 'jacc_'
 
     # Testing the network
     print('Testing... This will take some time...')
@@ -119,13 +114,7 @@ def test(args, test_list, model_list, net_input_shape):
     with open(join(output_dir, args.save_prefix + outfile + 'scores.csv'), 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
-        row = ['Scan Name']
-        if args.compute_dice:
-            row.append('Dice Coefficient')
-        if args.compute_jaccard:
-            row.append('Jaccard Index')
-        if args.compute_assd:
-            row.append('Average Symmetric Surface Distance')
+        row = ['Scan Name', 'Dice Coefficient', 'Jaccard Index']
 
         writer.writerow(row)
 
@@ -135,11 +124,15 @@ def test(args, test_list, model_list, net_input_shape):
         # labels = []
         # prediction_scores = []
 
-        for i, img in enumerate(tqdm(test_list)):
-            sitk_img = sitk.ReadImage(join(args.data_root_dir, 'images', img[0]))
-            img_data = sitk.GetArrayFromImage(sitk_img)
+        for scan in tqdm(test_list):
+            volume = scan[0]
+            if not volume in dice_arr:
+                dice_arr[volume] = []
+                jacc_arr[volume] = []
+            img = Image.open(join(args.data_root_dir, 'test', volume, 'images', scan[1]))
+            resized_img = img.resize((net_input_shape[1], net_input_shape[0]))
 
-            output_array = eval_model.predict(generate_test_batches(args.data_root_dir, [img],
+            output_array = eval_model.predict(generate_test_batches(args.data_root_dir, [scan],
                                                                     net_input_shape,
                                                                     batch_size=args.batch_size),
                                               steps=1, max_queue_size=1, workers=1,
@@ -166,14 +159,14 @@ def test(args, test_list, model_list, net_input_shape):
             output_mask = sitk.GetImageFromArray(output_bin)
 
             print('Saving Output')
-            sitk.WriteImage(output_mask, join(fin_out_dir, img[0][:-4] + '_final_output' + img[0][-4:]))
+            sitk.WriteImage(output_mask, join(fin_out_dir, scan[1][:-4] + '_final_output' + scan[1][-4:]))
 
             mask_data = np.array(
-                Image.open(join(args.data_root_dir, 'masks', img[1])).resize((net_input_shape[1], net_input_shape[0])),
+                Image.open(join(args.data_root_dir, 'test', volume, 'masks', scan[2])).resize((net_input_shape[1], net_input_shape[0]), Image.NEAREST),
                 dtype=np.uint8)
 
             output_array = softmax(output_array, axis=-1)
-            for j in range(shade_number):
+            for j in range(num_l):
                 y = np.zeros(mask_data.shape)
                 y[mask_data == j] = 1
                 label_stats[j].append(y.flatten())
@@ -185,60 +178,76 @@ def test(args, test_list, model_list, net_input_shape):
 
             # Plot Qual Figure
             print('Creating Qualitative Figure for Quick Reference')
-            f, ax = plt.subplots(1, 3, figsize=(15, 5))
+            if 'Cirrus' in args.data_root_dir:
+                f, ax = plt.subplots(1, 3, figsize=(10, 5))
+            else:
+                f, ax = plt.subplots(1, 3, figsize=(15, 5))
 
-            ax[0].imshow(img_data, alpha=1, cmap='gray')
-            ax[1].imshow(output_bin, alpha=0.5, cmap='Blues')
-            ax[2].imshow(mask_data, alpha=0.35, cmap='Oranges')
+            ax[0].imshow(img, alpha=1, cmap='gray')
+            ax[0].set_title('Originalni sken')
+            ax[1].imshow(resized_img, alpha=1, cmap='gray')
+            ax[1].imshow(mask_to_rgb(output), alpha=0.5)
+            # ax[1].imshow(output, alpha=1, cmap='gray')
+            ax[1].set_title('Izlaz iz mreže')
+            ax[2].imshow(resized_img, alpha=1, cmap='gray')
+            ax[2].imshow(mask_to_rgb(mask_data), alpha=0.5)
+            # ax[2].imshow(mask_data, alpha=1, cmap='gray')
+            ax[2].set_title('Referentna maska')
+            # ax[0].imshow(mask_data, alpha=1, cmap='gray')
+            # ax[1].imshow(mask_to_rgb(mask_data), alpha=1)
 
             fig = plt.gcf()
-            fig.suptitle(img[0][:-4])
+            # fig.suptitle(scan[1][:-4])
 
-            plt.savefig(join(fig_out_dir, img[0][:-4] + '_qual_fig' + '.png'),
+            plt.savefig(join(fig_out_dir, scan[1][:-4] + '_qual_fig' + '.png'),
                         format='png', bbox_inches='tight')
             plt.close('all')
 
-            row = [img[0][:-4]]
-            if args.compute_dice:
-                print('Computing Dice')
-                dice = DiceMetric()
-                dice_arr.append(np.stack(dice(output, mask_data, range(shade_number))))
-                print('\tDice: {}'.format(dice_arr[i]))
-                row.append(dice_arr[i])
-            if args.compute_jaccard:
-                print('Computing Jaccard')
-                jaccard = JaccardMetric()
-                jacc_arr.append(np.stack(jaccard(output, mask_data, range(shade_number))))
-                print('\tJaccard: {}'.format(jacc_arr[i]))
-                row.append(jacc_arr[i])
-            if args.compute_assd:
-                print('Computing ASSD')
-                assd_arr[i] = assd(output, mask_data, voxelspacing=sitk_img.GetSpacing(), connectivity=1)
-                print('\tASSD: {}'.format(assd_arr[i]))
-                row.append(assd_arr[i])
+            row = [scan[1][:-4]]
+            print('Computing Dice')
+            dice = DiceMetric()
+            dice_score = dice(output, mask_data, range(num_l))
+            dice_arr[volume].append(dice_score)
+            print('\tDice: {}'.format(dice_score))
+            row.append(dice_score)
+            print('Computing Jaccard')
+            jaccard = JaccardMetric()
+            jacc_score = jaccard(output, mask_data, range(num_l))
+            jacc_arr[volume].append(jacc_score)
+            print('\tJaccard: {}'.format(jacc_score))
+            row.append(jacc_score)
 
             writer.writerow(row)
 
-        row = ['Average Scores']
-        if args.compute_dice:
-            dice_arr = np.stack(dice_arr)
-            dice_mean = np.nanmean(dice_arr, axis=0)
-            row.append(dice_mean)
-        if args.compute_jaccard:
-            jacc_arr = np.stack(jacc_arr)
-            jacc_mean = np.mean(jacc_arr, axis=0)
-            row.append(jacc_mean)
-        if args.compute_assd:
-            row.append(np.mean(assd_arr))
+        writer.writerow('Volume averages:')
+        volume_dice_avgs = []
+        volume_jacc_avgs = []
+        for v in dice_arr:
+            volume_dice_avg = np.mean(np.stack(dice_arr[v]), axis=0)
+            volume_jacc_avg = np.mean(np.stack(jacc_arr[v]), axis=0)
+            volume_dice_avgs.append(volume_dice_avg)
+            volume_jacc_avgs.append(volume_jacc_avg)
+            row = [v, volume_dice_avg, volume_jacc_avg]
+            writer.writerow(row)
+        volume_dice_avgs = np.stack(volume_dice_avgs)
+        dice_mean = np.mean(volume_dice_avgs, axis=0)
+        volume_jacc_avgs = np.stack(volume_jacc_avgs)
+        jacc_mean = np.mean(volume_jacc_avgs, axis=0)
+        row = ['Average Scores', dice_mean, jacc_mean]
         writer.writerow(row)
 
+        fpr = []
+        tpr = []
         auc_scores = []
-        for i in range(num_l):
+        for i in range(1, num_l):
             labels = np.stack(label_stats[i]).flatten()
             scores = np.stack(prediction_scores[i]).flatten()
             fpr_rf, tpr_rf, thresholds_rf = roc_curve(labels, scores)
+            fpr.append(fpr_rf)
+            tpr.append(tpr_rf)
             auc_rf = auc(fpr_rf, tpr_rf)
             auc_scores.append(auc_rf)
+        plot_roc_curves(args, fpr, tpr, auc_scores, output_dir)
 
         # labels = np.stack(labels).flatten()
         # prediction_scores = np.stack(prediction_scores).reshape(-1, output_array.shape[-1])
@@ -249,3 +258,42 @@ def test(args, test_list, model_list, net_input_shape):
         writer.writerow(row)
 
     print('Done.')
+
+
+def plot_roc_curves(args, fpr, tpr, auc_scores, output_dir):
+    plt.figure()
+    lw = 2
+    colors = ['red', 'green', 'blue']
+    fluids = ['IRF', 'SRF', 'PED']
+    for i in range(len(auc_scores)):
+        plt.plot(fpr[i], tpr[i], color=colors[i],
+                 lw=lw, label=fluids[i] + ' ROC curve (area = %0.2f)' % auc_scores[i])
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    if 'Cirrus' in args.data_root_dir:
+        plt.title('Cirrus')
+    else:
+        plt.title('Spectralis')
+    plt.legend(loc="lower right")
+    plt.savefig(join(output_dir, 'roc_curves.png'),
+                format='png', bbox_inches='tight')
+    plt.close('all')
+
+
+def mask_to_rgb(mask):
+    rgb_mask = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
+    rgb_mask[mask == 1, 0] = 255
+    rgb_mask[mask == 2, 1] = 255
+    rgb_mask[mask == 3, 2] = 255
+    return rgb_mask
+
+
+def to_shades(mask):
+    new_mask = np.zeros(mask.shape, dtype=np.uint8)
+    new_mask[mask == 1] = 85
+    new_mask[mask == 2] = 170
+    new_mask[mask == 3] = 255
+

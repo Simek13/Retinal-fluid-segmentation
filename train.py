@@ -35,17 +35,13 @@ from custom_losses import dice_hard, weighted_binary_crossentropy_loss, margin_l
     weighted_spread_loss, dice_metric
 from load_3D_data import load_class_weights, generate_train_batches, generate_val_batches
 
-# CIRRUS_PIXEL_CLASS_WEIGHTS = {0: 0.003555870045612856, 1: 0.874566629820256, 2: 1.0, 3: 0.8723247732858718}
-# CIRRUS_PRESENCE_CLASS_WEIGHTS = {0: 0.20247395833333331, 1: 0.6652406417112299, 2: 0.8885714285714286, 3: 1.0}
-# SPECTRALIS_PIXEL_CLASS_WEIGHTS = {0: 0.0031737332265260555, 1: 0.5547157937848298, 2: 0.5589333800101778, 3: 1.0}
-# SPECTRALIS_PRESENCE_CLASS_WEIGHTS = {0: 0.2568027210884354, 1: 0.6003976143141153, 2: 0.8908554572271387, 3: 1.0}
 C_PIXEL = (0.003555870045612856, 0.874566629820256, 1.0, 0.8723247732858718)
 C_PRESENCE = np.array([1., 0.15218099, 0.11393229, 0.10123698]) * 4
 S_PIXEL = (0.0031737332265260555, 0.5547157937848298, 0.5589333800101778, 1.0)
 S_PIXELS = (1., 0.00572137, 0.0056782,  0.00317373)
 S_PIXELS_BALANCED = np.array([1., 0.00955425, 0.00948216, 0.0052999]) * 4
 S_PRESENCE = (0.2568027210884354, 0.6003976143141153, 0.8908554572271387, 1.0)
-S_PRESENCES = (1., 0.42772109, 0.28826531, 0.25680272)
+S_PRESENCES = np.array([1., 0.42772109, 0.28826531, 0.25680272]) * 4
 S_PRESENCES_BALANCED = np.array([1., 0.70745429, 0.47679325, 0.42475387])
 S_PRESENCE_MSE = (1.0, 2.337972166998012, 3.4690265486725664, 3.8940397350993377)
 S_PIXEL_MSE = (0.014573297188993577, 176.3305415840263, 177.67881191975138, 318.6781911942668)
@@ -131,7 +127,7 @@ def compile_model(args, net_input_shape, uncomp_model):
     # if args.net == 'matwo':
     #     opt = Adadelta()
     # else:
-    opt = Adam(lr=args.initial_lr, beta_1=0.99, beta_2=0.999, decay=1e-6)
+    opt = Adam(lr=args.initial_lr, beta_1=0.9, beta_2=0.999, decay=1e-6)
     if args.net.find('caps') != -1:
         # metrics = {'out_seg': 'categorical_accuracy'}
         metrics = {'out_seg': dice_soft}

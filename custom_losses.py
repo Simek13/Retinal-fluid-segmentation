@@ -316,7 +316,7 @@ def spread_loss(m_low=0.2, m_high=0.9, epochs=50, epoch_step=50):
     return loss_fun
 
 
-def weighted_spread_loss(weights=None, m_low=0.2, m_high=0.9, epochs=20, epoch_step=20):
+def weighted_spread_loss(weights=None, m_low=0.2, m_high=0.9, epochs=25, epoch_step=25):
     def loss_fun(labels, logits):
         n_labels = tf.shape(labels)[3]
         m = m_low + (m_high - m_low) * tf.minimum(tf.cast(epoch_step / epochs, dtype=tf.float32),

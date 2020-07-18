@@ -104,9 +104,11 @@ def volume_class_distribution_analysis(root_path, volumes):
     return (fluid_appearances / im_counter) * 100
 
 
-def v_class_distribution_analysis(root_path, volumes):
+def v_class_distribution_analysis(root_path, volumes=''):
     im_counter = 0
     fluid_appearances = np.zeros(3)
+    if volumes == '':
+        volumes = listdir(root_path)
     for v in volumes:
         masks_dir = join(root_path, v, 'masks')
         masks = listdir(masks_dir)
@@ -130,23 +132,27 @@ def check_class_distr(train, val, test):
 
 if __name__ == '__main__':
     print_current('Starting preprocessing...')
-    root_path = './Spectralis'
+    root_path = './Cirrus'
     # volume_split(root_path)
-    while True:
-        train_vols, val_vols, test_vols = train_val_test_split(root_path)
-        train_dist = v_class_distribution_analysis(root_path, train_vols).tolist()
-        val_dist = v_class_distribution_analysis(root_path, val_vols).tolist()
-        test_dist = v_class_distribution_analysis(root_path, test_vols).tolist()
-        if check_class_distr(train_dist[0], val_dist[0], test_dist[0]) and \
-                check_class_distr(train_dist[1], val_dist[1], test_dist[1]) and \
-                check_class_distr(train_dist[2], val_dist[2], test_dist[2]):
-            break
+    # while True:
+    #     train_vols, val_vols, test_vols = train_val_test_split(root_path)
+    train_path = join(root_path, 'train')
+    val_path = join(root_path, 'val')
+    test_path = join(root_path, 'test')
+    train_dist = v_class_distribution_analysis(train_path).tolist()
+    val_dist = v_class_distribution_analysis(val_path).tolist()
+    test_dist = v_class_distribution_analysis(test_path).tolist()
+        # if check_class_distr(train_dist[0], val_dist[0], test_dist[0]) and \
+        #         check_class_distr(train_dist[1], val_dist[1], test_dist[1]) and \
+        #         check_class_distr(train_dist[2], val_dist[2], test_dist[2]):
+        #     break
     print(train_dist)
     print(val_dist)
     print(test_dist)
-    copy_volumes(root_path, train_vols, val_vols, test_vols)
+    # copy_volumes(root_path, train_vols, val_vols, test_vols)
     X = np.arange(3)
     fig = plt.figure()
+    fig.suptitle('Cirrus')
     ax = fig.add_axes([0, 0, 1, 1])
     ax.bar(X + 0.00, train_dist, color='b', width=0.25)
     ax.bar(X + 0.25, val_dist, color='g', width=0.25)
@@ -156,7 +162,7 @@ if __name__ == '__main__':
     ax.set_xticklabels(('IRF', 'SRF', 'PED'))
     ax.set_yticks(np.arange(0, 101, 20))
     ax.legend(labels=['train', 'val', 'test'])
-    plt.savefig(join(root_path, 'class_distribution' + '_spectralis' + '.png'),
+    plt.savefig(join(root_path, 'class_distribution' + '_cirrus' + '.png'),
                 format='png', bbox_inches='tight')
 
     # process(spectralis_masks)

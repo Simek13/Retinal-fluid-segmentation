@@ -26,7 +26,7 @@ class TpFpFnMetricBase():
             current_score = self.evaluate_function(tp, fp, fn)
             scores.append(current_score)
         # return np.nanmean(scores)
-        return scores
+        return np.stack(scores)
 
     def __call__(self, prediction, groundtruth, labels):
         return self.calculate_tp_fp_fn_scores(prediction, groundtruth, labels)
@@ -37,7 +37,7 @@ class TpFpFnMetricBase():
 
 class DiceMetric(TpFpFnMetricBase):
     def evaluate_function(self, tp, fp, fn):
-        return 2 * tp / (2 * tp + fp + fn)
+        return 2 * tp / (2 * tp + fp + fn) if tp + fp + fn > 0 else 1
 
 
 class JaccardMetric(TpFpFnMetricBase):
