@@ -17,10 +17,6 @@ def create_model(args, input_shape):
             from unet import UNet
             model = UNet(input_shape)
             return [model]
-        elif args.net == 'tiramisu':
-            from densenets import DenseNetFCN
-            model = DenseNetFCN(input_shape)
-            return [model]
         elif args.net == 'segcapsr1':
             from capsnet import CapsNetR1
             model_list = CapsNetR1(input_shape)
@@ -47,10 +43,6 @@ def create_model(args, input_shape):
             if args.net == 'unet':
                 from unet import UNet
                 model = UNet(input_shape)
-                return [model]
-            elif args.net == 'tiramisu':
-                from densenets import DenseNetFCN
-                model = DenseNetFCN(input_shape)
                 return [model]
             elif args.net == 'segcapsr1':
                 from capsnet import CapsNetR1
