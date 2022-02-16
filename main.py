@@ -1,14 +1,3 @@
-'''
-Capsules for Object Segmentation (SegCaps)
-Original Paper by Rodney LaLonde and Ulas Bagci (https://arxiv.org/abs/1804.04241)
-Code written by: Rodney LaLonde
-If you use significant portions of this code or the ideas from our paper, please cite it :)
-If you have any questions, please email me at lalonde@knights.ucf.edu.
-
-This is the main file for the project. From here you can train, test, and manipulate the SegCaps of models.
-Please see the README for detailed instructions for this project.
-'''
-
 from __future__ import print_function
 
 from comet_ml import Experiment

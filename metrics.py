@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-
-'''
-code from medpy metric.binary.py. This is just a local copy in case that repo changes.
-'''
-
 import numpy as np
 from scipy.ndimage import _ni_support
 from scipy.ndimage.morphology import distance_transform_edt, binary_erosion, \

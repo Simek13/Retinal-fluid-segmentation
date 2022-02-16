@@ -1,13 +1,3 @@
-'''
-Capsules for Object Segmentation (SegCaps)
-Original Paper by Rodney LaLonde and Ulas Bagci (https://arxiv.org/abs/1804.04241)
-Code written by: Rodney LaLonde
-If you use significant portions of this code or the ideas from our paper, please cite it :)
-If you have any questions, please email me at lalonde@knights.ucf.edu.
-
-This file is used for testing models. Please see the README for details about testing.
-'''
-
 from __future__ import print_function
 
 import matplotlib

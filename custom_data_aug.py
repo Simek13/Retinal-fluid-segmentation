@@ -1,13 +1,3 @@
-'''
-Capsules for Object Segmentation (SegCaps)
-Original Paper by Rodney LaLonde and Ulas Bagci (https://arxiv.org/abs/1804.04241)
-Code written by: Rodney LaLonde
-If you use significant portions of this code or the ideas from our paper, please cite it :)
-If you have any questions, please email me at lalonde@knights.ucf.edu.
-
-This file contains the custom data augmentation functions.
-'''
-
 import numpy as np
 import cv2
 from scipy.ndimage.interpolation import map_coordinates

@@ -1,14 +1,3 @@
-# -*- coding: utf-8 -*-
-'''
-Capsules for Object Segmentation (SegCaps)
-Original Paper: https://arxiv.org/abs/1804.04241
-Code written by: Rodney LaLonde
-If you use significant portions of this code or the ideas from our paper, please cite it :)
-If you have any questions, please email me at lalonde@knights.ucf.edu.
-
-This file contains the definitions of custom loss functions not present in the default Keras.
-'''
-
 import tensorflow as tf
 from keras import backend as K
 import numpy as np
